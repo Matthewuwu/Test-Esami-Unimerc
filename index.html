@@ -151,6 +151,7 @@
     <div class="row" style="margin-top:10px">
       <button class="btn green block" id="btnAdd">➕ Aggiungi alla banca dati</button>
     </div>
+    <button class="btn sec block" id="btnBulk" style="margin-top:8px">📥 Importa molte domande in blocco (incolla da Gemini)</button>
   </div>
 
   <!-- Question list -->
@@ -400,6 +401,113 @@ function importData(e){
     }catch(err){ toast("File non valido: "+err.message); }
   };
   r.readAsText(file);
+}
+
+/* ============================================================
+   IMPORT IN BLOCCO (incolla tante coppie D/R, anche da Gemini)
+   ============================================================ */
+$("#btnBulk").addEventListener("click", openBulkImport);
+
+function openBulkImport(){
+  openModal({
+    title:"📥 Importa molte domande",
+    body: m=>{
+      const ta = el("textarea",{class:"t",id:"bulkText",style:"min-height:170px",
+        placeholder:"Incolla qui, anche 40-50 coppie alla volta:\n\nD: prima domanda...\nR: prima risposta...\n---\nD: seconda domanda...\nR: seconda risposta..."});
+      const preview = el("div",{class:"small",style:"margin-top:8px;color:var(--muted)"}, "In attesa del testo...");
+      ta.addEventListener("input", ()=>{
+        const p = parseBulk(ta.value);
+        preview.textContent = ta.value.trim()
+          ? (p.length ? `✅ Riconosciute ${p.length} coppie domanda/risposta.` : "⚠️ Nessuna coppia riconosciuta: controlla il formato D:/R:.")
+          : "In attesa del testo...";
+        preview.style.color = p.length ? "var(--green)" : "var(--muted)";
+      });
+      m.append(
+        el("p",{class:"small muted"},"Le coppie vengono aggiunte alla materia «"+curSubject().name+"». Formato accettato: righe «D:» e «R:» (anche «Domanda:/Risposta:» o «Q:/A:»), o un array JSON."),
+        ta, preview,
+        el("details",{style:"margin-top:12px"},
+          el("summary",{class:"small",style:"cursor:pointer;color:var(--accent2)"},"📋 Hai solo le domande? Prompt pronto per Gemini"),
+          el("p",{class:"small muted",style:"margin-top:8px"},"Copia questo prompt, incollalo in Gemini insieme alle tue domande, poi incolla qui sopra la sua risposta:"),
+          el("button",{class:"btn sec sm",onClick:async()=>{
+            try{ await navigator.clipboard.writeText(geminiPrompt()); toast("Prompt copiato ✅"); }
+            catch(e){ toast("Copia manualmente dal riquadro"); }
+          }},"📋 Copia prompt per Gemini"),
+          el("div",{class:"codebox",style:"margin-top:8px"}, geminiPrompt())
+        )
+      );
+    },
+    actions:[
+      {label:"➕ Aggiungi alla banca dati", cls:"btn green", on:close=>{
+        const pairs = parseBulk($("#bulkText").value);
+        if(!pairs.length){ toast("Nessuna coppia riconosciuta."); return; }
+        const sub = curSubject();
+        const existing = new Set(sub.questions.map(q=>q.q.trim().toLowerCase()));
+        let added=0, dup=0;
+        pairs.forEach(p=>{
+          const key = p.q.trim().toLowerCase();
+          if(!p.q.trim() || !p.a.trim()) return;
+          if(existing.has(key)){ dup++; return; }
+          existing.add(key);
+          sub.questions.unshift({ id:uid(), q:p.q.trim(), a:p.a.trim(), verify:null });
+          added++;
+        });
+        render(); close();
+        toast(`✅ Aggiunte ${added} domande${dup?` · ${dup} duplicate saltate`:""}.`);
+      }},
+      {label:"Annulla", cls:"btn sec", on:close=>close()}
+    ]
+  });
+}
+
+/* Parser tollerante: JSON oppure blocchi D:/R: con risposte multi-riga. */
+function parseBulk(text){
+  const t = (text||"").trim();
+  if(!t) return [];
+  // 1) JSON: [{q,a}] o varianti
+  if(t[0]==="[" || t[0]==="{"){
+    const j = parseJSON(t);
+    const arr = Array.isArray(j) ? j : (j && Array.isArray(j.items) ? j.items : null);
+    if(arr) return arr.map(o=>({
+      q:(o.q||o.domanda||o.question||"")+"",
+      a:(o.a||o.r||o.risposta||o.answer||"")+""
+    })).filter(x=>x.q.trim()&&x.a.trim());
+  }
+  // 2) Testo a blocchi D:/R:
+  const lines = t.replace(/\r/g,"").split("\n");
+  const qRe = /^\s*(?:D|Domanda|Q|Question)\s*[\.:\)]\s*/i;
+  const aRe = /^\s*(?:R|Risposta|A|Answer)\s*[\.:\)]\s*/i;
+  const pairs=[]; let cur=null, mode=null;
+  const flush=()=>{ if(cur && cur.q.trim() && cur.a.trim()) pairs.push(cur); cur=null; mode=null; };
+  for(const line of lines){
+    if(/^\s*-{3,}\s*$/.test(line)){ flush(); continue; }
+    if(qRe.test(line)){
+      if(cur && cur.q.trim() && cur.a.trim()) flush();
+      if(!cur) cur={q:"",a:""};
+      cur.q = line.replace(qRe,"").trim(); mode="q"; continue;
+    }
+    if(aRe.test(line)){
+      if(!cur) cur={q:"",a:""};
+      cur.a = line.replace(aRe,"").trim(); mode="a"; continue;
+    }
+    if(cur && mode && line.trim()!==""){
+      cur[mode] += (cur[mode] ? "\n" : "") + line.trim();
+    }
+  }
+  flush();
+  return pairs;
+}
+function geminiPrompt(){
+  return [
+"Sei un docente universitario. Per OGNI domanda elencata sotto, scrivi una risposta corretta, completa ma concisa, adatta a un esame universitario.",
+"Rispondi ESATTAMENTE in questo formato, una coppia dopo l'altra, SENZA introduzioni, SENZA numerazione e senza altro testo:",
+"",
+"D: <ricopia qui la domanda>",
+"R: <scrivi qui la risposta>",
+"---",
+"",
+"DOMANDE:",
+"(incolla qui sotto le tue domande)"
+  ].join("\n");
 }
 
 /* ============================================================

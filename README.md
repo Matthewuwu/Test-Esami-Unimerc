@@ -10,7 +10,12 @@ della tua banca dati e usa Claude per **controllare che le risposte siano corret
 
 1. Apri **`index.html`** (doppio clic) oppure pubblicalo su GitHub Pages per averlo come sito.
 2. Crea le tue **materie/esami** (pulsante `＋ Materia`).
-3. Aggiungi **domande e risposte** nella banca dati.
+3. Aggiungi **domande e risposte** nella banca dati:
+   - una alla volta col modulo, **oppure**
+   - **📥 Importa in blocco**: incolla anche 40-50 coppie alla volta (formato
+     `D:` / `R:`, o JSON). Se hai solo le domande, l'app ti dà un **prompt pronto
+     per Gemini**: lo incolli in Gemini con le domande, e la sua risposta entra
+     nell'app senza ritocchi.
 4. Usa i pulsanti in alto:
    - **📖 Studia** — flashcard: leggi la domanda e riveli la risposta.
    - **✍️ Quiz** — scrivi la tua risposta e Claude la valuta con un voto.
