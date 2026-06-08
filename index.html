@@ -187,7 +187,7 @@ function defaults(){
   return {
     subjects: [{ id: uid(), name: "Generale", questions: [] }],
     currentSubject: null,
-    settings: { aiMode: "paste", apiKey: "", model: "claude-opus-4-8" }
+    settings: { aiMode: "paste", apiKey: "", model: "claude-opus-4-8", batchSize: 20 }
   };
 }
 function load(){
@@ -196,7 +196,7 @@ function load(){
     if(!raw) return defaults();
     const s = JSON.parse(raw);
     if(!s.subjects || !s.subjects.length) return defaults();
-    if(!s.settings) s.settings = defaults().settings;
+    s.settings = Object.assign(defaults().settings, s.settings || {});
     if(!s.currentSubject || !s.subjects.find(x=>x.id===s.currentSubject))
       s.currentSubject = s.subjects[0].id;
     return s;
@@ -506,31 +506,97 @@ function renderGrade(box, d){
 /* ============================================================
    VERIFICA ANTI-ALLUCINAZIONI
    ============================================================ */
-$("#btnVerify").addEventListener("click", ()=>{
-  const qs = curSubject().questions;
-  if(!qs.length){ toast("Aggiungi prima qualche domanda."); return; }
-  verifyBatch(qs);
-});
+$("#btnVerify").addEventListener("click", openVerifyPanel);
+
 function verifySingle(id){
   const q = curSubject().questions.find(x=>x.id===id);
-  if(q) verifyBatch([q]);
+  if(q) runVerification([q], "1 domanda");
 }
-async function verifyBatch(qs){
-  const prompt = verifyPrompt(qs);
-  try{
-    const data = await aiRequest(prompt, `Verifica di ${qs.length} risposta/e`);
-    if(!data) return;
-    const results = data.results || data;
-    if(!Array.isArray(results)){ toast("Risposta AI non interpretabile."); return; }
+
+/* Pannello di controllo: gestisce banche dati grandi (500-600 domande)
+   lavorando a lotti e saltando quelle già verificate. */
+function openVerifyPanel(){
+  const sub = curSubject();
+  if(!sub.questions.length){ toast("Aggiungi prima qualche domanda."); return; }
+  const total = sub.questions.length;
+  const pending = sub.questions.filter(q=>!q.verify);
+  const flagged = sub.questions.filter(q=>q.verify && (q.verify.verdict==="incorrect"||q.verify.verdict==="partial")).length;
+  const size = state.settings.batchSize || 20;
+  const cycles = Math.ceil(pending.length/size);
+
+  openModal({
+    title:"🔍 Verifica anti-allucinazioni",
+    body: m=>{
+      m.append(
+        el("div",{class:"row wrap",style:"gap:10px;margin-bottom:12px"},
+          stat(total,"Totali"),
+          stat(total-pending.length,"Verificate"),
+          stat(pending.length,"Da fare"),
+          stat(flagged,"Segnalate"),
+        ),
+        el("label",{class:"fld"},"Domande per lotto"),
+        el("input",{class:"t",id:"batchSize",type:"number",min:"5",max:"50",value:size}),
+        el("p",{class:"small muted",style:"margin-top:6px"},
+          state.settings.aiMode==="api"
+            ? "In modalità API i lotti scorrono in automatico."
+            : `In modalità abbonamento farai 1 copia-incolla per lotto. Puoi fermarti e riprendere quando vuoi: le già verificate vengono saltate.`
+        ),
+      );
+      if(pending.length){
+        m.append(el("p",{class:"small",style:"margin-top:8px"},
+          `Verranno verificate le ${pending.length} non ancora controllate, in ~${cycles} lotto/i.`));
+      } else {
+        m.append(el("p",{class:"small",style:"margin-top:8px;color:var(--green)"},"✅ Tutte le domande sono già verificate."));
+      }
+    },
+    actions:[
+      pending.length ? {label:`▶️ Verifica le ${pending.length} mancanti`, cls:"btn green", on:close=>{
+        state.settings.batchSize = clampBatch($("#batchSize").value); save();
+        close(); runVerification(pending, "non verificate");
+      }} : null,
+      {label:"🔄 Ri-verifica TUTTE", cls:"btn amber", on:close=>{
+        state.settings.batchSize = clampBatch($("#batchSize").value); save();
+        if(!confirm(`Ri-controllare da zero tutte le ${total} domande?`)) return;
+        close(); runVerification(sub.questions.slice(), "tutte");
+      }},
+      {label:"Chiudi", cls:"btn sec", on:close=>close()}
+    ].filter(Boolean)
+  });
+}
+function stat(n,lab){
+  return el("div",{style:"flex:1;min-width:64px;text-align:center;background:var(--panel2);border:1px solid var(--border);border-radius:10px;padding:8px"},
+    el("div",{style:"font-size:22px;font-weight:800"}, String(n)),
+    el("div",{class:"small muted"}, lab));
+}
+function clampBatch(v){ v=parseInt(v,10)||20; return Math.max(5, Math.min(50, v)); }
+
+async function runVerification(questions, etichetta){
+  const sub = curSubject();
+  const size = state.settings.batchSize || 20;
+  const batches = chunk(questions, size);
+  let doneQ = 0;
+  for(let b=0; b<batches.length; b++){
+    const batch = batches[b];
+    let data;
+    try{
+      data = await aiRequest(verifyPrompt(batch),
+        `Verifica (${etichetta}) — lotto ${b+1} di ${batches.length}`);
+    }catch(err){ toast("Errore: "+err.message); break; }
+    if(!data){ // annullato
+      if(b>0) toast(`Fermato: ${doneQ} domande verificate. Riprendi quando vuoi.`);
+      break;
+    }
+    const results = Array.isArray(data) ? data : (data.results||[]);
     let n=0;
     results.forEach(r=>{
-      const q = curSubject().questions.find(x=>x.id===r.id) || qs.find(x=>x.id===r.id);
+      const q = sub.questions.find(x=>x.id===r.id) || batch.find(x=>x.id===r.id);
       if(q){ q.verify = { verdict: VERDICTS[r.verdict]?r.verdict:"uncertain", correction: r.correction||"" }; n++; }
     });
-    render();
-    toast(`Verificate ${n} risposta/e ✅`);
-  }catch(err){ toast("Errore: "+err.message); }
+    doneQ += n; render();
+    if(b===batches.length-1) toast(`✅ Verifica completata: ${doneQ} domande.`);
+  }
 }
+function chunk(arr, n){ const out=[]; for(let i=0;i<arr.length;i+=n) out.push(arr.slice(i,i+n)); return out; }
 
 /* ============================================================
    PROMPT BUILDERS
@@ -680,6 +746,9 @@ $("#btnSettings").addEventListener("click", ()=>{
             ); sel.value=s.model; return sel; })(),
           el("p",{class:"small muted",style:"margin-top:8px"},"La chiave resta solo in questo browser. Creala su console.anthropic.com.")
         ),
+        el("label",{class:"fld",style:"margin-top:14px"},"Domande per lotto nella verifica"),
+        el("input",{class:"t",id:"setBatch",type:"number",min:"5",max:"50",value:s.batchSize||20}),
+        el("p",{class:"small muted",style:"margin-top:6px"},"Le banche dati grandi (500-600 domande) vengono verificate a lotti per non superare i limiti dell'AI. Consigliato: 15-25."),
         el("p",{class:"small muted",style:"margin-top:14px"},"Con la modalità abbonamento usi Claude Code o l'app Claude che hai già, senza costi a token.")
       );
       $("#aiMode").addEventListener("change", e=>{
@@ -692,6 +761,7 @@ $("#btnSettings").addEventListener("click", ()=>{
         s.aiMode = $("#aiMode").value;
         if($("#apiKey")) s.apiKey = $("#apiKey").value.trim();
         if($("#model")) s.model = $("#model").value;
+        if($("#setBatch")) s.batchSize = clampBatch($("#setBatch").value);
         save(); close(); toast("Impostazioni salvate ✅");
       }},
       {label:"Chiudi", cls:"btn sec", on:close=>close()}

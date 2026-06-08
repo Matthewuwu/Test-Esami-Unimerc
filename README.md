@@ -15,6 +15,9 @@ della tua banca dati e usa Claude per **controllare che le risposte siano corret
    - **📖 Studia** — flashcard: leggi la domanda e riveli la risposta.
    - **✍️ Quiz** — scrivi la tua risposta e Claude la valuta con un voto.
    - **🔍 Verifica** — Claude controlla che le risposte salvate siano corrette.
+     Le banche dati grandi (**500-600 domande**) vengono controllate **a lotti**
+     (es. 20 per volta), saltando quelle già verificate: puoi fermarti e
+     riprendere quando vuoi. In modalità API i lotti scorrono in automatico.
    - **💾 Dati** — backup (esporta/importa `.json`) e copia della banca dati.
 
 I dati sono salvati nel **browser** (localStorage). Usa **💾 Dati → Esporta backup**
