@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#1f6feb">
+<title>Banca Dati Esami</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2330; --border:#30363d;
+    --txt:#e6edf3; --muted:#8b949e; --accent:#1f6feb; --accent2:#388bfd;
+    --green:#2ea043; --red:#da3633; --amber:#d29922; --radius:12px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--txt);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size:16px; line-height:1.45; -webkit-text-size-adjust:100%;
+  }
+  button{font-family:inherit; cursor:pointer}
+  input,textarea,select{font-family:inherit; font-size:16px}
+  .app{max-width:900px; margin:0 auto; padding:0 14px 90px}
+
+  /* Top bar */
+  header.bar{
+    position:sticky; top:0; z-index:30; background:rgba(13,17,23,.92);
+    backdrop-filter:blur(8px); border-bottom:1px solid var(--border);
+    display:flex; align-items:center; gap:10px; padding:12px 14px; margin:0 -14px 14px;
+  }
+  header.bar h1{font-size:18px; margin:0; flex:0 0 auto; display:flex; align-items:center; gap:8px}
+  header.bar h1 .logo{
+    width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--accent),#8957e5);
+    display:flex;align-items:center;justify-content:center;font-size:17px
+  }
+  .spacer{flex:1}
+  .icon-btn{
+    background:var(--panel2); border:1px solid var(--border); color:var(--txt);
+    width:40px; height:40px; border-radius:10px; font-size:18px; display:flex;
+    align-items:center; justify-content:center;
+  }
+  .icon-btn:active{transform:scale(.94)}
+
+  /* Generic */
+  .card{background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:14px; margin-bottom:14px}
+  .row{display:flex; gap:10px; align-items:center}
+  .wrap{flex-wrap:wrap}
+  label.fld{display:block; font-size:13px; color:var(--muted); margin:0 0 5px}
+  input.t,textarea.t,select.t{
+    width:100%; background:var(--bg); border:1px solid var(--border); color:var(--txt);
+    border-radius:10px; padding:11px 12px; outline:none;
+  }
+  input.t:focus,textarea.t:focus,select.t:focus{border-color:var(--accent2)}
+  textarea.t{resize:vertical; min-height:70px}
+  .btn{
+    background:var(--accent); border:1px solid transparent; color:#fff; font-weight:600;
+    padding:11px 15px; border-radius:10px; font-size:15px;
+  }
+  .btn:active{transform:scale(.97)}
+  .btn.sec{background:var(--panel2); border-color:var(--border); color:var(--txt)}
+  .btn.green{background:var(--green)} .btn.red{background:var(--red)} .btn.amber{background:var(--amber);color:#1a1300}
+  .btn.sm{padding:7px 11px; font-size:13px; border-radius:8px}
+  .btn.block{width:100%; justify-content:center; display:flex}
+  .muted{color:var(--muted)} .small{font-size:13px}
+  .pill{display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:999px; font-size:12px; font-weight:600}
+  .pill.ok{background:rgba(46,160,67,.18); color:#56d364}
+  .pill.bad{background:rgba(218,54,51,.18); color:#ff7b72}
+  .pill.part{background:rgba(210,153,34,.18); color:#e3b341}
+  .pill.unk{background:rgba(139,148,158,.18); color:#adbac7}
+  .pill.none{background:rgba(139,148,158,.12); color:var(--muted)}
+  .hidden{display:none !important}
+
+  /* Subject tabs */
+  .subjects{display:flex; gap:8px; overflow-x:auto; padding-bottom:4px; margin-bottom:12px; -webkit-overflow-scrolling:touch}
+  .subject-tab{
+    flex:0 0 auto; background:var(--panel2); border:1px solid var(--border); color:var(--muted);
+    padding:8px 14px; border-radius:999px; font-size:14px; white-space:nowrap; font-weight:600;
+  }
+  .subject-tab.active{background:var(--accent); color:#fff; border-color:var(--accent)}
+
+  /* Toolbar */
+  .toolbar{display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:14px}
+  .toolbar .btn{flex-direction:column; gap:3px; padding:11px 4px; font-size:12px; display:flex; align-items:center}
+  .toolbar .btn .ic{font-size:19px}
+  @media(max-width:520px){ .toolbar{grid-template-columns:repeat(2,1fr)} }
+
+  /* Question item */
+  .q-item{border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:10px; background:var(--panel2)}
+  .q-item .q-text{font-weight:600; margin-bottom:6px}
+  .q-item .a-text{color:var(--muted); font-size:14.5px; white-space:pre-wrap}
+  .q-item .q-head{display:flex; justify-content:space-between; align-items:flex-start; gap:8px}
+  .q-item .q-actions{display:flex; gap:6px; margin-top:10px; flex-wrap:wrap}
+  .correction{margin-top:8px; padding:8px 10px; border-left:3px solid var(--amber); background:rgba(210,153,34,.08); border-radius:6px; font-size:13.5px}
+
+  /* Modal */
+  .overlay{position:fixed; inset:0; background:rgba(1,4,9,.7); z-index:50; display:flex; align-items:flex-end; justify-content:center; padding:0}
+  @media(min-width:640px){ .overlay{align-items:center; padding:20px} }
+  .modal{
+    background:var(--panel); border:1px solid var(--border); width:100%; max-width:680px;
+    max-height:92vh; overflow-y:auto; border-radius:16px 16px 0 0; padding:18px;
+  }
+  @media(min-width:640px){ .modal{border-radius:16px} }
+  .modal h2{margin:0 0 4px; font-size:18px}
+  .modal .close{position:absolute}
+  .modal-head{display:flex; justify-content:space-between; align-items:center; margin-bottom:14px}
+
+  /* Flashcard */
+  .flash{min-height:160px; display:flex; flex-direction:column; justify-content:center; text-align:center; padding:18px; background:var(--panel2); border:1px solid var(--border); border-radius:12px; margin-bottom:14px}
+  .flash .lab{font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin-bottom:8px}
+  .flash .q{font-size:19px; font-weight:600}
+  .flash .a{font-size:16px; color:#adbac7; white-space:pre-wrap; margin-top:6px}
+  .progress{height:6px; background:var(--panel2); border-radius:999px; overflow:hidden; margin-bottom:12px}
+  .progress > i{display:block; height:100%; background:var(--accent); transition:width .25s}
+
+  .codebox{background:var(--bg); border:1px solid var(--border); border-radius:10px; padding:12px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:13px; white-space:pre-wrap; word-break:break-word; max-height:240px; overflow:auto}
+  .steps{counter-reset:s; margin:0 0 12px; padding:0; list-style:none}
+  .steps li{position:relative; padding-left:30px; margin-bottom:8px; font-size:14px}
+  .steps li:before{counter-increment:s; content:counter(s); position:absolute; left:0; top:0; width:21px; height:21px; background:var(--accent); color:#fff; border-radius:50%; font-size:12px; display:flex; align-items:center; justify-content:center; font-weight:700}
+  .empty{text-align:center; padding:40px 16px; color:var(--muted)}
+  .empty .big{font-size:40px; margin-bottom:10px}
+  .grade-ring{width:84px;height:84px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:800;margin:0 auto 10px;border:5px solid var(--border)}
+  .toast{position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--panel2); border:1px solid var(--border); color:var(--txt); padding:12px 18px; border-radius:10px; z-index:100; box-shadow:0 8px 30px rgba(0,0,0,.5); font-size:14px}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header class="bar">
+    <h1><span class="logo">🎓</span> Banca Dati Esami</h1>
+    <span class="spacer"></span>
+    <button class="icon-btn" id="btnSettings" title="Impostazioni">⚙️</button>
+  </header>
+
+  <!-- Subject tabs -->
+  <div class="subjects" id="subjects"></div>
+
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <button class="btn" id="btnStudy"><span class="ic">📖</span>Studia</button>
+    <button class="btn" id="btnQuiz"><span class="ic">✍️</span>Quiz</button>
+    <button class="btn amber" id="btnVerify"><span class="ic">🔍</span>Verifica</button>
+    <button class="btn sec" id="btnData"><span class="ic">💾</span>Dati</button>
+  </div>
+
+  <!-- Add question -->
+  <div class="card">
+    <label class="fld">Domanda</label>
+    <textarea class="t" id="inQ" placeholder="Scrivi qui la domanda dell'esame..."></textarea>
+    <label class="fld" style="margin-top:10px">Risposta</label>
+    <textarea class="t" id="inA" placeholder="Scrivi qui la risposta corretta..."></textarea>
+    <div class="row" style="margin-top:10px">
+      <button class="btn green block" id="btnAdd">➕ Aggiungi alla banca dati</button>
+    </div>
+  </div>
+
+  <!-- Question list -->
+  <div class="row wrap" style="justify-content:space-between; margin-bottom:8px">
+    <strong id="listTitle">Domande</strong>
+    <input class="t" id="search" placeholder="🔎 Cerca..." style="max-width:200px; padding:8px 10px">
+  </div>
+  <div id="qlist"></div>
+
+</div>
+
+<div id="modalRoot"></div>
+<div id="toastRoot"></div>
+
+<script>
+"use strict";
+/* ============================================================
+   Banca Dati Esami — app single-file
+   Salvataggio: localStorage. Controllo AI: ponte copia-incolla
+   con l'abbonamento Claude, oppure (opzionale) chiave API.
+   ============================================================ */
+
+const STORE_KEY = "bancaDatiEsami.v1";
+const VERDICTS = {
+  correct:  {pill:"ok",   label:"Corretta"},
+  partial:  {pill:"part", label:"Parziale"},
+  incorrect:{pill:"bad",  label:"Da rivedere"},
+  uncertain:{pill:"unk",  label:"Incerta"},
+};
+
+/* ---------- Stato ---------- */
+let state = load();
+function defaults(){
+  return {
+    subjects: [{ id: uid(), name: "Generale", questions: [] }],
+    currentSubject: null,
+    settings: { aiMode: "paste", apiKey: "", model: "claude-opus-4-8" }
+  };
+}
+function load(){
+  try{
+    const raw = localStorage.getItem(STORE_KEY);
+    if(!raw) return defaults();
+    const s = JSON.parse(raw);
+    if(!s.subjects || !s.subjects.length) return defaults();
+    if(!s.settings) s.settings = defaults().settings;
+    if(!s.currentSubject || !s.subjects.find(x=>x.id===s.currentSubject))
+      s.currentSubject = s.subjects[0].id;
+    return s;
+  }catch(e){ return defaults(); }
+}
+function save(){ localStorage.setItem(STORE_KEY, JSON.stringify(state)); }
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+function curSubject(){ return state.subjects.find(s=>s.id===state.currentSubject) || state.subjects[0]; }
+
+/* ---------- Util DOM ---------- */
+const $ = sel => document.querySelector(sel);
+function el(tag, attrs={}, ...kids){
+  const n = document.createElement(tag);
+  for(const [k,v] of Object.entries(attrs)){
+    if(k==="class") n.className=v;
+    else if(k==="html") n.innerHTML=v;
+    else if(k.startsWith("on")) n.addEventListener(k.slice(2).toLowerCase(), v);
+    else n.setAttribute(k,v);
+  }
+  for(const kid of kids){ if(kid==null) continue; n.append(kid.nodeType?kid:document.createTextNode(kid)); }
+  return n;
+}
+function esc(s){ return (s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function toast(msg){
+  const t = el("div",{class:"toast"}, msg);
+  $("#toastRoot").append(t);
+  setTimeout(()=>t.remove(), 2600);
+}
+
+/* ============================================================
+   RENDER
+   ============================================================ */
+function render(){
+  if(state.currentSubject==null) state.currentSubject = state.subjects[0].id;
+  renderSubjects();
+  renderList();
+  save();
+}
+
+function renderSubjects(){
+  const box = $("#subjects"); box.innerHTML="";
+  state.subjects.forEach(s=>{
+    box.append(el("button",{
+      class:"subject-tab"+(s.id===state.currentSubject?" active":""),
+      onClick:()=>{ state.currentSubject=s.id; render(); }
+    }, `${s.name} (${s.questions.length})`));
+  });
+  box.append(el("button",{class:"subject-tab", onClick:manageSubjects, title:"Gestisci materie"}, "＋ Materia"));
+}
+
+function renderList(){
+  const sub = curSubject();
+  $("#listTitle").textContent = `Domande · ${sub.name}`;
+  const term = ($("#search").value||"").toLowerCase().trim();
+  const list = $("#qlist"); list.innerHTML="";
+  const items = sub.questions.filter(q =>
+    !term || q.q.toLowerCase().includes(term) || q.a.toLowerCase().includes(term));
+
+  if(!sub.questions.length){
+    list.append(el("div",{class:"empty"},
+      el("div",{class:"big"},"📭"),
+      el("div",{},"Nessuna domanda in questa materia."),
+      el("div",{class:"small muted",style:"margin-top:6px"},"Aggiungi domande e risposte qui sopra.")
+    ));
+    return;
+  }
+  if(!items.length){ list.append(el("div",{class:"empty"},"Nessun risultato per la ricerca.")); return; }
+
+  items.forEach(q=>{
+    const v = q.verify;
+    const pill = v
+      ? el("span",{class:"pill "+VERDICTS[v.verdict].pill}, VERDICTS[v.verdict].label)
+      : el("span",{class:"pill none"}, "Non verificata");
+
+    const node = el("div",{class:"q-item"},
+      el("div",{class:"q-head"},
+        el("div",{class:"q-text"}, q.q),
+        pill
+      ),
+      el("div",{class:"a-text"}, q.a),
+      v && v.correction ? el("div",{class:"correction"},
+        el("strong",{},"Nota AI: "), v.correction) : null,
+      el("div",{class:"q-actions"},
+        el("button",{class:"btn sec sm", onClick:()=>editQuestion(q.id)}, "✏️ Modifica"),
+        el("button",{class:"btn amber sm", onClick:()=>verifySingle(q.id)}, "🔍 Verifica"),
+        el("button",{class:"btn red sm", onClick:()=>delQuestion(q.id)}, "🗑️")
+      )
+    );
+    list.append(node);
+  });
+}
+
+/* ============================================================
+   CRUD domande / materie
+   ============================================================ */
+$("#btnAdd").addEventListener("click", ()=>{
+  const q = $("#inQ").value.trim(), a = $("#inA").value.trim();
+  if(!q || !a){ toast("Inserisci sia domanda che risposta."); return; }
+  curSubject().questions.unshift({ id:uid(), q, a, verify:null });
+  $("#inQ").value=""; $("#inA").value=""; $("#inQ").focus();
+  render(); toast("Domanda aggiunta ✅");
+});
+$("#search").addEventListener("input", renderList);
+
+function delQuestion(id){
+  if(!confirm("Eliminare questa domanda?")) return;
+  const sub = curSubject();
+  sub.questions = sub.questions.filter(q=>q.id!==id);
+  render();
+}
+function editQuestion(id){
+  const sub = curSubject(); const q = sub.questions.find(x=>x.id===id);
+  openModal({
+    title:"Modifica domanda",
+    body: m=>{
+      m.append(
+        el("label",{class:"fld"},"Domanda"),
+        el("textarea",{class:"t",id:"eQ"}, q.q),
+        el("label",{class:"fld",style:"margin-top:10px"},"Risposta"),
+        el("textarea",{class:"t",id:"eA",style:"min-height:120px"}, q.a),
+      );
+    },
+    actions:[
+      {label:"Salva", cls:"btn green", on:close=>{
+        q.q = $("#eQ").value.trim(); q.a = $("#eA").value.trim();
+        q.verify=null; render(); close(); toast("Modificata ✅");
+      }},
+      {label:"Annulla", cls:"btn sec", on:close=>close()}
+    ]
+  });
+}
+
+function manageSubjects(){
+  openModal({
+    title:"Gestisci materie / esami",
+    body: m=>{
+      const wrap = el("div",{});
+      state.subjects.forEach(s=>{
+        wrap.append(el("div",{class:"row",style:"margin-bottom:8px"},
+          el("input",{class:"t", value:s.name, onInput:e=>{ s.name=e.target.value; save(); renderSubjects(); }}),
+          el("button",{class:"btn red sm", onClick:()=>{
+            if(state.subjects.length<=1){ toast("Tieni almeno una materia."); return; }
+            if(!confirm(`Eliminare "${s.name}" e tutte le sue domande?`)) return;
+            state.subjects = state.subjects.filter(x=>x.id!==s.id);
+            if(state.currentSubject===s.id) state.currentSubject=state.subjects[0].id;
+            render(); manageSubjects();
+          }},"🗑️")
+        ));
+      });
+      m.append(wrap, el("div",{class:"row",style:"margin-top:10px"},
+        el("input",{class:"t",id:"newSub",placeholder:"Nome nuova materia/esame"}),
+        el("button",{class:"btn green",onClick:()=>{
+          const v = $("#newSub").value.trim(); if(!v) return;
+          const ns={id:uid(),name:v,questions:[]}; state.subjects.push(ns);
+          state.currentSubject=ns.id; render(); closeModal();
+        }},"Aggiungi")
+      ));
+    },
+    actions:[{label:"Chiudi", cls:"btn sec", on:close=>close()}]
+  });
+}
+
+/* ============================================================
+   IMPORT / EXPORT
+   ============================================================ */
+$("#btnData").addEventListener("click", ()=>{
+  openModal({
+    title:"Dati & Backup",
+    body: m=>{
+      m.append(
+        el("p",{class:"small muted"},"I tuoi dati sono salvati solo in questo browser. Esporta un backup per non perderli o per spostarli su un altro dispositivo."),
+        el("button",{class:"btn block",style:"margin-bottom:10px",onClick:exportData},"⬇️ Esporta backup (.json)"),
+        el("label",{class:"btn sec block",style:"margin-bottom:10px",for:"importFile"},"⬆️ Importa backup (.json)"),
+        el("input",{type:"file",id:"importFile",accept:".json,application/json",style:"display:none",onChange:importData}),
+        el("hr",{style:"border-color:var(--border);margin:14px 0"}),
+        el("button",{class:"btn block",style:"margin-bottom:10px",onClick:()=>{ closeModal(); copyBankForClaudeCode(); }},"📋 Copia tutta la banca dati (per Claude Code)"),
+        el("p",{class:"small muted"},"Statistiche: "+
+          state.subjects.reduce((n,s)=>n+s.questions.length,0)+" domande in "+state.subjects.length+" materie."),
+      );
+    },
+    actions:[{label:"Chiudi", cls:"btn sec", on:close=>close()}]
+  });
+});
+function exportData(){
+  const blob = new Blob([JSON.stringify(state,null,2)], {type:"application/json"});
+  const a = el("a",{href:URL.createObjectURL(blob), download:"banca-dati-esami.json"});
+  a.click(); URL.revokeObjectURL(a.href); toast("Backup esportato ✅");
+}
+function importData(e){
+  const file = e.target.files[0]; if(!file) return;
+  const r = new FileReader();
+  r.onload = ()=>{
+    try{
+      const data = JSON.parse(r.result);
+      if(!data.subjects) throw new Error("Formato non valido");
+      if(confirm("Sostituire i dati attuali con il backup importato?")){
+        state = data; if(!state.settings) state.settings=defaults().settings;
+        state.currentSubject = state.subjects[0].id;
+        render(); closeModal(); toast("Backup importato ✅");
+      }
+    }catch(err){ toast("File non valido: "+err.message); }
+  };
+  r.readAsText(file);
+}
+
+/* ============================================================
+   STUDIO (flashcard)
+   ============================================================ */
+$("#btnStudy").addEventListener("click", ()=>{
+  const qs = curSubject().questions.slice();
+  if(!qs.length){ toast("Aggiungi prima qualche domanda."); return; }
+  shuffle(qs);
+  let i=0, shown=false;
+  openModal({
+    title:"📖 Studio — "+curSubject().name,
+    body: m=>{
+      const prog = el("div",{class:"progress"}, el("i",{}));
+      const card = el("div",{class:"flash"});
+      const reveal = el("button",{class:"btn block",style:"margin-bottom:8px"},"Mostra risposta");
+      const nav = el("div",{class:"row",style:"gap:8px"});
+      const prev = el("button",{class:"btn sec",style:"flex:1"},"← Indietro");
+      const next = el("button",{class:"btn",style:"flex:1"},"Avanti →");
+      nav.append(prev,next);
+      m.append(prog, card, reveal, nav);
+
+      function draw(){
+        const q = qs[i];
+        prog.firstChild.style.width = ((i+1)/qs.length*100)+"%";
+        card.innerHTML="";
+        card.append(el("div",{class:"lab"},`Domanda ${i+1} / ${qs.length}`), el("div",{class:"q"}, q.q));
+        if(shown) card.append(el("div",{class:"a"}, q.a));
+        reveal.textContent = shown ? "Nascondi risposta" : "Mostra risposta";
+      }
+      reveal.onclick = ()=>{ shown=!shown; draw(); };
+      prev.onclick = ()=>{ if(i>0){i--; shown=false; draw();} };
+      next.onclick = ()=>{ if(i<qs.length-1){i++; shown=false; draw();} else { toast("Fine! 🎉"); closeModal(); } };
+      draw();
+    },
+    actions:[{label:"Chiudi", cls:"btn sec", on:close=>close()}]
+  });
+});
+
+/* ============================================================
+   QUIZ (con valutazione AI)
+   ============================================================ */
+$("#btnQuiz").addEventListener("click", ()=>{
+  const qs = curSubject().questions.slice();
+  if(!qs.length){ toast("Aggiungi prima qualche domanda."); return; }
+  shuffle(qs);
+  let i=0;
+  openModal({
+    title:"✍️ Quiz — "+curSubject().name,
+    body: m=>{ drawQuiz(); function drawQuiz(){
+      m.innerHTML="";
+      const q = qs[i];
+      const prog = el("div",{class:"progress"}, el("i",{}));
+      prog.firstChild.style.width = ((i+1)/qs.length*100)+"%";
+      m.append(prog,
+        el("div",{class:"lab",style:"font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px"},`Domanda ${i+1} / ${qs.length}`),
+        el("div",{style:"font-size:18px;font-weight:600;margin-bottom:12px"}, q.q),
+        el("label",{class:"fld"},"La tua risposta"),
+        el("textarea",{class:"t",id:"quizAns",style:"min-height:110px",placeholder:"Rispondi a memoria..."}),
+      );
+      const result = el("div",{style:"margin-top:12px"});
+      const gradeBtn = el("button",{class:"btn green block",style:"margin-top:10px"},"🔍 Valuta con l'AI");
+      const showBtn = el("button",{class:"btn sec block",style:"margin-top:8px"},"Mostra risposta corretta");
+      const nextBtn = el("button",{class:"btn block",style:"margin-top:8px"},"Prossima domanda →");
+      m.append(gradeBtn, showBtn, result, nextBtn);
+
+      showBtn.onclick = ()=>{
+        result.innerHTML="";
+        result.append(el("div",{class:"correction"}, el("strong",{},"Risposta corretta: "), q.a));
+      };
+      nextBtn.onclick = ()=>{ if(i<qs.length-1){ i++; drawQuiz(); } else { toast("Quiz finito! 🎉"); closeModal(); } };
+      gradeBtn.onclick = async ()=>{
+        const ua = $("#quizAns").value.trim();
+        if(!ua){ toast("Scrivi prima una risposta."); return; }
+        const prompt = quizPrompt(q.q, q.a, ua);
+        result.innerHTML=""; result.append(el("div",{class:"muted small"},"In attesa della valutazione..."));
+        try{
+          const data = await aiRequest(prompt, "Valutazione quiz");
+          if(!data){ result.innerHTML=""; return; }
+          renderGrade(result, data);
+        }catch(err){ result.innerHTML=""; result.append(el("div",{class:"pill bad"},"Errore: "+err.message)); }
+      };
+    }},
+    actions:[{label:"Chiudi", cls:"btn sec", on:close=>close()}]
+  });
+});
+function renderGrade(box, d){
+  box.innerHTML="";
+  const score = Math.max(0,Math.min(100, Number(d.score)||0));
+  const col = score>=75?"var(--green)":score>=50?"var(--amber)":"var(--red)";
+  box.append(
+    el("div",{class:"grade-ring",style:`border-color:${col};color:${col}`}, score+""),
+    el("div",{style:"text-align:center;font-weight:600;margin-bottom:8px"}, d.verdict||""),
+    el("div",{class:"correction"}, el("strong",{},"Feedback: "), d.feedback||"—"),
+  );
+  if(Array.isArray(d.missing) && d.missing.length){
+    box.append(el("div",{style:"margin-top:8px"},
+      el("div",{class:"small muted",style:"margin-bottom:4px"},"Punti mancanti:"),
+      el("ul",{style:"margin:0;padding-left:20px"}, ...d.missing.map(x=>el("li",{class:"small"},x)))
+    ));
+  }
+}
+
+/* ============================================================
+   VERIFICA ANTI-ALLUCINAZIONI
+   ============================================================ */
+$("#btnVerify").addEventListener("click", ()=>{
+  const qs = curSubject().questions;
+  if(!qs.length){ toast("Aggiungi prima qualche domanda."); return; }
+  verifyBatch(qs);
+});
+function verifySingle(id){
+  const q = curSubject().questions.find(x=>x.id===id);
+  if(q) verifyBatch([q]);
+}
+async function verifyBatch(qs){
+  const prompt = verifyPrompt(qs);
+  try{
+    const data = await aiRequest(prompt, `Verifica di ${qs.length} risposta/e`);
+    if(!data) return;
+    const results = data.results || data;
+    if(!Array.isArray(results)){ toast("Risposta AI non interpretabile."); return; }
+    let n=0;
+    results.forEach(r=>{
+      const q = curSubject().questions.find(x=>x.id===r.id) || qs.find(x=>x.id===r.id);
+      if(q){ q.verify = { verdict: VERDICTS[r.verdict]?r.verdict:"uncertain", correction: r.correction||"" }; n++; }
+    });
+    render();
+    toast(`Verificate ${n} risposta/e ✅`);
+  }catch(err){ toast("Errore: "+err.message); }
+}
+
+/* ============================================================
+   PROMPT BUILDERS
+   ============================================================ */
+function verifyPrompt(qs){
+  const items = qs.map(q=>({id:q.id, domanda:q.q, risposta_salvata:q.a}));
+  return [
+"Sei un docente universitario esperto. Verifica se le RISPOSTE SALVATE qui sotto sono corrette e complete rispetto alle relative domande d'esame. Non fidarti ciecamente: controlla i fatti e segnala eventuali errori o allucinazioni.",
+"",
+"Per OGNI elemento restituisci un verdetto:",
+'- "correct": la risposta salvata è corretta e adeguata',
+'- "partial": parzialmente corretta o incompleta',
+'- "incorrect": contiene errori / informazioni false',
+'- "uncertain": non puoi stabilirlo con certezza',
+"",
+"Nel campo \"correction\" scrivi la correzione o l'integrazione (vuoto se corretta).",
+"",
+"Rispondi SOLO con un oggetto JSON valido, senza testo prima o dopo, in questo formato esatto:",
+'{"results":[{"id":"<id>","verdict":"correct|partial|incorrect|uncertain","correction":"<testo>"}]}',
+"",
+"DATI:",
+JSON.stringify(items, null, 2)
+  ].join("\n");
+}
+function quizPrompt(q,a,ua){
+  return [
+"Sei un docente universitario che corregge una risposta d'esame. Confronta la RISPOSTA DELLO STUDENTE con la RISPOSTA CORRETTA e valuta in modo equo (premia il contenuto, non la forma esatta).",
+"",
+"DOMANDA: "+q,
+"RISPOSTA CORRETTA: "+a,
+"RISPOSTA DELLO STUDENTE: "+ua,
+"",
+"Rispondi SOLO con un oggetto JSON valido, senza testo prima o dopo, in questo formato esatto:",
+'{"score":<0-100>,"verdict":"<breve giudizio>","feedback":"<spiegazione>","missing":["<punto mancante>"]}'
+  ].join("\n");
+}
+
+/* ============================================================
+   PONTE AI: abbonamento (copia-incolla) oppure API
+   ============================================================ */
+async function aiRequest(prompt, titolo){
+  if(state.settings.aiMode==="api" && state.settings.apiKey){
+    return await apiCall(prompt);
+  }
+  return await pasteBridge(prompt, titolo);
+}
+
+/* --- Modalità API (opzionale, consuma token) --- */
+async function apiCall(prompt){
+  const res = await fetch("https://api.anthropic.com/v1/messages",{
+    method:"POST",
+    headers:{
+      "content-type":"application/json",
+      "x-api-key": state.settings.apiKey,
+      "anthropic-version":"2023-06-01",
+      "anthropic-dangerous-direct-browser-access":"true"
+    },
+    body: JSON.stringify({
+      model: state.settings.model || "claude-opus-4-8",
+      max_tokens: 4000,
+      messages:[{role:"user", content: prompt}]
+    })
+  });
+  if(!res.ok){ throw new Error("API "+res.status+" — "+(await res.text()).slice(0,140)); }
+  const data = await res.json();
+  const text = (data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("\n");
+  return parseJSON(text);
+}
+
+/* --- Modalità abbonamento: copia il prompt, incolla la risposta --- */
+function pasteBridge(prompt, titolo){
+  return new Promise(resolve=>{
+    openModal({
+      title:"🤖 "+(titolo||"Controllo AI")+" (abbonamento Claude)",
+      body: m=>{
+        m.append(
+          el("ol",{class:"steps"},
+            el("li",{}, "Premi ", el("strong",{},"Copia"), " qui sotto."),
+            el("li",{}, "Incolla in ", el("strong",{},"Claude Code"), " (o nell'app Claude / Claude.ai) e invia."),
+            el("li",{}, "Copia la risposta di Claude e incollala nel riquadro in basso, poi premi ", el("strong",{},"Elabora"),".")
+          ),
+          el("button",{class:"btn block",style:"margin-bottom:12px",onClick:async()=>{
+            try{ await navigator.clipboard.writeText(prompt); toast("Prompt copiato ✅"); }
+            catch(e){ selectText($("#promptBox")); toast("Seleziona e copia manualmente"); }
+          }},"📋 Copia il prompt"),
+          el("div",{class:"codebox",id:"promptBox"}, prompt),
+          el("label",{class:"fld",style:"margin-top:14px"},"Incolla qui la risposta di Claude"),
+          el("textarea",{class:"t",id:"aiPaste",style:"min-height:120px",placeholder:'Incolla qui... (va bene anche se contiene del testo attorno al JSON)'}),
+        );
+      },
+      actions:[
+        {label:"✅ Elabora", cls:"btn green", on:close=>{
+          const txt = $("#aiPaste").value.trim();
+          if(!txt){ toast("Incolla prima la risposta di Claude."); return; }
+          const parsed = parseJSON(txt);
+          if(!parsed){ toast("Non trovo un JSON valido nella risposta."); return; }
+          close(); resolve(parsed);
+        }},
+        {label:"Annulla", cls:"btn sec", on:close=>{ close(); resolve(null); }}
+      ],
+      onClose: ()=>resolve(null)
+    });
+  });
+}
+function parseJSON(text){
+  if(!text) return null;
+  // prova diretta, poi estrai il primo blocco { ... } o [ ... ]
+  try{ return JSON.parse(text); }catch(e){}
+  const m = text.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
+  if(m){ try{ return JSON.parse(m[0]); }catch(e){} }
+  return null;
+}
+function selectText(node){
+  const r = document.createRange(); r.selectNodeContents(node);
+  const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+}
+function copyBankForClaudeCode(){
+  const sub = curSubject();
+  const text = "Ecco la mia banca dati per la materia \""+sub.name+"\". Verifica che ogni risposta sia corretta e segnalami errori o allucinazioni:\n\n"+
+    sub.questions.map((q,i)=>`${i+1}. D: ${q.q}\n   R: ${q.a}`).join("\n\n");
+  navigator.clipboard.writeText(text).then(()=>toast("Banca dati copiata ✅"))
+    .catch(()=>toast("Copia non riuscita"));
+}
+
+/* ============================================================
+   IMPOSTAZIONI
+   ============================================================ */
+$("#btnSettings").addEventListener("click", ()=>{
+  const s = state.settings;
+  openModal({
+    title:"⚙️ Impostazioni",
+    body: m=>{
+      m.append(
+        el("label",{class:"fld"},"Modalità di controllo AI"),
+        (()=>{ const sel = el("select",{class:"t",id:"aiMode"},
+            el("option",{value:"paste"},"Abbonamento Claude — copia/incolla (gratis, niente token)"),
+            el("option",{value:"api"},"Chiave API — automatico (consuma token)")
+          ); sel.value=s.aiMode; return sel; })(),
+        el("div",{id:"apiBox",class:s.aiMode==="api"?"":"hidden",style:"margin-top:12px"},
+          el("label",{class:"fld"},"Chiave API Anthropic"),
+          el("input",{class:"t",id:"apiKey",type:"password",placeholder:"sk-ant-...",value:s.apiKey||""}),
+          el("label",{class:"fld",style:"margin-top:10px"},"Modello"),
+          (()=>{ const sel=el("select",{class:"t",id:"model"},
+              el("option",{value:"claude-opus-4-8"},"Claude Opus 4.8 (massima qualità)"),
+              el("option",{value:"claude-sonnet-4-6"},"Claude Sonnet 4.6 (più economico)"),
+              el("option",{value:"claude-haiku-4-5"},"Claude Haiku 4.5 (rapido/economico)")
+            ); sel.value=s.model; return sel; })(),
+          el("p",{class:"small muted",style:"margin-top:8px"},"La chiave resta solo in questo browser. Creala su console.anthropic.com.")
+        ),
+        el("p",{class:"small muted",style:"margin-top:14px"},"Con la modalità abbonamento usi Claude Code o l'app Claude che hai già, senza costi a token.")
+      );
+      $("#aiMode").addEventListener("change", e=>{
+        $("#apiBox").className = e.target.value==="api" ? "" : "hidden";
+        $("#apiBox").style.marginTop="12px";
+      });
+    },
+    actions:[
+      {label:"Salva", cls:"btn green", on:close=>{
+        s.aiMode = $("#aiMode").value;
+        if($("#apiKey")) s.apiKey = $("#apiKey").value.trim();
+        if($("#model")) s.model = $("#model").value;
+        save(); close(); toast("Impostazioni salvate ✅");
+      }},
+      {label:"Chiudi", cls:"btn sec", on:close=>close()}
+    ]
+  });
+});
+
+/* ============================================================
+   MODALE generica
+   ============================================================ */
+let _modalOnClose=null;
+function openModal({title, body, actions=[], onClose=null}){
+  closeModal();
+  _modalOnClose = onClose;
+  const overlay = el("div",{class:"overlay", onClick:e=>{ if(e.target===overlay) closeModal(); }});
+  const modal = el("div",{class:"modal"});
+  const head = el("div",{class:"modal-head"},
+    el("h2",{}, title),
+    el("button",{class:"icon-btn", onClick:closeModal}, "✕")
+  );
+  modal.append(head);
+  const bodyWrap = el("div",{});
+  body(bodyWrap);
+  modal.append(bodyWrap);
+  if(actions.length){
+    const bar = el("div",{class:"row",style:"gap:8px;margin-top:16px"});
+    actions.forEach(a=> bar.append(el("button",{class:a.cls+" block", onClick:()=>a.on(()=>{_modalOnClose=null; closeModal();})}, a.label)));
+    modal.append(bar);
+  }
+  overlay.append(modal);
+  $("#modalRoot").append(overlay);
+  document.body.style.overflow="hidden";
+}
+function closeModal(){
+  const cb=_modalOnClose; _modalOnClose=null;
+  $("#modalRoot").innerHTML="";
+  document.body.style.overflow="";
+  if(cb) cb();
+}
+
+/* ---------- helpers ---------- */
+function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+
+/* ---------- avvio ---------- */
+render();
+</script>
+</body>
+</html>
