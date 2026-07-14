@@ -525,9 +525,52 @@ def _espandi_pannello_lezioni(page, debug=False):
     return aperti
 
 
+# JS: la lista delle lezioni può essere "virtualizzata" (l'app monta nel DOM
+# solo le righe vicine alla posizione di scroll, per non appesantire il
+# rendering di corsi con tante lezioni). Bisogna quindi scorrere il
+# contenitore per far comparire via via tutte le righe, non basta espandere
+# una volta sola. Trova il contenitore scrollabile risalendo dagli antenati
+# della prima riga "N - Titolo" trovata.
+_JS_SCORRI_CONTENITORE_LEZIONI = r"""
+() => {
+    const righe = [...document.querySelectorAll('div')].filter(e =>
+        e.children.length === 0 &&
+        /^\s*\d+\s*-\s*.+/.test((e.textContent || '').trim())
+    );
+    if (!righe.length) return null;
+    let el = righe[0];
+    while (el && el.scrollHeight <= el.clientHeight + 2 && el.parentElement) {
+        el = el.parentElement;
+    }
+    if (!el) return null;
+    const prima = el.scrollTop;
+    const inFondo = el.scrollTop + el.clientHeight >= el.scrollHeight - 2;
+    if (!inFondo) {
+        el.scrollTop = Math.min(el.scrollTop + el.clientHeight * 0.7, el.scrollHeight);
+    }
+    return {prima, dopo: el.scrollTop, inFondo};
+}
+"""
+
+
+def _scorri_pannello_lezioni(page):
+    """Scorre in avanti il contenitore della lista lezioni. Ritorna True se ha
+    effettivamente scrollato (cioè non era già arrivato in fondo)."""
+    try:
+        risultato = page.evaluate(_JS_SCORRI_CONTENITORE_LEZIONI)
+    except Exception:
+        return False
+    if not risultato:
+        return False
+    if risultato.get("inFondo"):
+        return False
+    return risultato.get("dopo") != risultato.get("prima")
+
+
 def scopri_lezioni_corso(context, url_iniziale, debug):
     """Apre la pagina di partenza, apre il pannello 'Contenuti del Corso' e
-    clicca ogni riga di lezione per scoprire l'URL a cui porta.
+    clicca ogni riga di lezione (scorrendo la lista, che può essere
+    virtualizzata) per scoprire l'URL a cui porta.
     Ritorna {numero_lezione: url}."""
     codice = estrai_codice_corso(url_iniziale)
     if not codice:
@@ -555,16 +598,39 @@ def scopri_lezioni_corso(context, url_iniziale, debug):
             righe = _righe_lezione_candidate(page)
 
         if debug:
-            print(f"   📚 righe lezione individuate nel pannello: {len(righe)}")
+            print(f"   📚 righe lezione individuate all'apertura: {len(righe)} (la lista potrebbe essere virtualizzata: proseguo scorrendo)")
 
-        indice = 0
-        while indice < len(righe):
-            # Ri-query ad ogni giro: dopo un go_back il DOM può essere ricreato
-            # e i riferimenti agli elementi precedenti diventerebbero stantii.
+        testi_elaborati = set()
+        giri_senza_novita = 0
+        MAX_GIRI = 300  # sicurezza anti-loop-infinito (corsi con centinaia di lezioni)
+
+        for _ in range(MAX_GIRI):
             righe_correnti = _righe_lezione_candidate(page)
-            if indice >= len(righe_correnti):
-                break
-            el, testo = righe_correnti[indice]
+            if not righe_correnti:
+                _espandi_pannello_lezioni(page, debug=False)
+                righe_correnti = _righe_lezione_candidate(page)
+
+            riga_da_cliccare = None
+            for el, testo in righe_correnti:
+                if testo not in testi_elaborati:
+                    riga_da_cliccare = (el, testo)
+                    break
+
+            if riga_da_cliccare is None:
+                # Nessuna riga nuova visibile: prova a scorrere la lista.
+                if _scorri_pannello_lezioni(page):
+                    page.wait_for_timeout(400)
+                    giri_senza_novita = 0
+                    continue
+                giri_senza_novita += 1
+                if giri_senza_novita >= 3:
+                    break
+                page.wait_for_timeout(300)
+                continue
+
+            giri_senza_novita = 0
+            el, testo = riga_da_cliccare
+            testi_elaborati.add(testo)  # marcato SUBITO: evita loop infiniti se il click fallisce
             url_prima = page.url
             try:
                 if el.is_visible():
@@ -593,7 +659,9 @@ def scopri_lezioni_corso(context, url_iniziale, debug):
             except Exception as e:
                 if debug:
                     print(f"      ⚠️  errore sulla riga {testo!r}: {e}")
-            indice += 1
+        else:
+            if debug:
+                print(f"   ⚠️  raggiunto il limite di sicurezza ({MAX_GIRI} giri): mi fermo qui")
     except Exception as e:
         if debug:
             print(f"   ⚠️  scoperta lezioni fallita: {e}")
