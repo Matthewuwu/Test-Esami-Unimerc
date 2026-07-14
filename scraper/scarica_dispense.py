@@ -240,17 +240,22 @@ def assicura_login(context, headless: bool, url_prova: str = None):
     ha_campo_password = page.query_selector("input[type='password']") is not None
     sembra_login = bool(re.search(r"login|accedi|sign[-_]?in", page.url, re.I))
     serve_login = ha_campo_password or sembra_login
-    page.close()
 
     if serve_login:
         if headless:
+            page.close()
             sys.exit("🔒 Non risulti loggato ma sei in --headless.\n"
                      "   Lancia una prima volta SENZA --headless per fare il login.")
+        # IMPORTANTE: la pagina resta aperta apposta — è quella su cui fai il login.
+        # Chiuderla adesso (come faceva una versione precedente) la fa sparire
+        # e appare "about:blank" prima ancora che tu possa accedere.
         print("\n🔐 Fai il LOGIN al portale nella finestra che si è aperta.")
         print("   Quando sei dentro e vedi la tua area studenti, torna qui e premi INVIO.")
         input("   ▶️  Premi INVIO per continuare...  ")
     else:
         print("✅ Sessione già attiva (login non necessario).")
+
+    page.close()
 
 
 # ============================================================
