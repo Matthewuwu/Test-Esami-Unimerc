@@ -1,0 +1,6 @@
+# Metti qui gli URL delle pagine (corso/lezione) da cui scaricare le dispense.
+# Uno per riga. Le righe che iniziano con # vengono ignorate.
+#
+# Esempio:
+# https://www.unimercatorum.it/corso/.../lezione-1
+# https://www.unimercatorum.it/corso/.../lezione-2

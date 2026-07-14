@@ -41,3 +41,47 @@ per non perderli o per spostarli su un altro dispositivo.
 
 GitHub → **Settings → Pages → Branch: main → /(root)**. L'app sarà raggiungibile
 da qualsiasi dispositivo via browser.
+
+---
+
+## Scaricare le dispense PDF (script locale) — `scarica_dispense.py`
+
+Strumento **separato** dall'app (uno script Python che gira sul tuo PC Linux):
+scarica le dispense PDF da **Unimercatorum** riusando la tua sessione di login,
+e le salva in `/home/mattia/kDrive/Universita/Management per l'impresa`.
+
+> ⚠️ L'app HTML nel browser **non può** fare questo (blocco CORS + impossibile
+> scrivere in cartelle arbitrarie). Per lo scraping con login serve un programma
+> locale: ecco perché è uno script a parte.
+
+### Installazione (una volta)
+
+```bash
+pip install -r requirements.txt
+playwright install chromium
+```
+
+### Uso
+
+```bash
+# 1ª volta: si apre una finestra, fai il LOGIN a Unimercatorum, poi premi INVIO
+python3 scarica_dispense.py "https://www.unimercatorum.it/.../pagina-del-corso"
+
+# più pagine insieme
+python3 scarica_dispense.py URL1 URL2 URL3
+
+# oppure metti gli URL (uno per riga) in dispense_urls.txt e lancia senza argomenti
+python3 scarica_dispense.py
+
+# per vedere cosa trova SENZA scaricare (utile per tarare)
+python3 scarica_dispense.py "URL" --debug
+
+# dopo il primo login, puoi girare senza finestra
+python3 scarica_dispense.py --headless
+```
+
+Il login viene chiesto **una sola volta**: la sessione resta salvata in
+`~/.config/scarica-dispense/profilo`. I file già scaricati vengono saltati.
+La cartella di destinazione si cambia in cima allo script (`CARTELLA_DESTINAZIONE`)
+o con `--out`.
+
