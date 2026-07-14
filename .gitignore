@@ -5,3 +5,6 @@ __pycache__/
 
 # eventuali backup personali della banca dati (dati tuoi, non del progetto)
 banca-dati-esami*.json
+
+# dump HTML di diagnostica dello scraper (--debug)
+scraper/debug_output/

@@ -162,34 +162,89 @@ def trova_url_pdf_nella_pagina(page):
     return None
 
 
-def espandi_sezioni_dispense(page, debug=False):
-    """Clicca i toggle che rivelano le dispense. Ritorna quanti ne ha aperti."""
-    aperti = 0
-    toggles = page.query_selector_all(TOGGLE_SELECTOR)
-    if debug:
-        print(f"   🔧 toggle individuati via classe: {len(toggles)}")
-    for t in toggles:
+def tutti_i_frame(page):
+    """Pagina principale + eventuali iframe annidati (le SPA con visualizzatori
+    PDF spesso incorporano il contenuto in un iframe, invisibile alle ricerche
+    normali su 'page')."""
+    try:
+        return list(page.frames)
+    except Exception:
+        return [page.main_frame]
+
+
+def diagnosi_pagina(page, debug):
+    """Stampa informazioni diagnostiche e (in --debug) salva l'HTML completo
+    su file, per capire perché una pagina risulta 'vuota' alle ricerche."""
+    if not debug:
+        return
+    frames = tutti_i_frame(page)
+    tot_link = 0
+    print(f"   🧭 URL effettivo: {page.url}")
+    print(f"   🧭 Titolo: {page.title()!r}")
+    print(f"   🧭 Frame nella pagina: {len(frames)}"
+          + (f" (di cui {len(frames)-1} iframe)" if len(frames) > 1 else ""))
+    for fr in frames:
         try:
-            if t.is_visible():
-                t.click(timeout=1500)
-                page.wait_for_timeout(400)
-                aperti += 1
+            n = len(fr.query_selector_all("a[href]"))
+            tot_link += n
+            if fr != page.main_frame:
+                print(f"      • iframe: {fr.url}  ({n} link <a>)")
         except Exception:
             pass
+    print(f"   🧭 Link <a> totali (tutti i frame): {tot_link}")
+
+    try:
+        cartella_debug = Path(__file__).with_name("debug_output")
+        cartella_debug.mkdir(exist_ok=True)
+        dump = cartella_debug / "ultima_pagina.html"
+        dump.write_text(page.content(), encoding="utf-8")
+        print(f"   💾 HTML completo salvato in: {dump}")
+        print(f"      (utile per cercare a mano: grep -io -C2 'dispens' \"{dump}\")")
+    except Exception:
+        pass
+
+
+def espandi_sezioni_dispense(page, debug=False):
+    """Clicca i toggle che rivelano le dispense (in qualsiasi frame). Ritorna
+    quanti ne ha aperti."""
+    aperti = 0
+    for frame in tutti_i_frame(page):
+        try:
+            toggles = frame.query_selector_all(TOGGLE_SELECTOR)
+        except Exception:
+            continue
+        if debug and toggles:
+            etichetta = "pagina principale" if frame == page.main_frame else frame.url
+            print(f"   🔧 toggle individuati via classe in [{etichetta}]: {len(toggles)}")
+        for t in toggles:
+            try:
+                if t.is_visible():
+                    t.click(timeout=1500)
+                    page.wait_for_timeout(400)
+                    aperti += 1
+            except Exception:
+                pass
     if aperti:
         page.wait_for_timeout(500)
         return aperti
 
     # Fallback: ricerca testuale, nel caso la classe sia cambiata o non trovata.
-    for parola in ["Dispens", "Materiale", "Materiali"]:
-        for el in page.query_selector_all(f"text=/{parola}/i"):
+    for frame in tutti_i_frame(page):
+        for parola in ["Dispens", "Materiale", "Materiali"]:
             try:
-                if el.is_visible():
-                    el.click(timeout=1500)
-                    page.wait_for_timeout(400)
-                    aperti += 1
+                elementi = frame.query_selector_all(f"text=/{parola}/i")
             except Exception:
-                pass
+                continue
+            for el in elementi:
+                try:
+                    if el.is_visible():
+                        el.click(timeout=1500)
+                        page.wait_for_timeout(400)
+                        aperti += 1
+                except Exception:
+                    pass
+            if aperti:
+                break
         if aperti:
             break
     if aperti:
@@ -241,18 +296,30 @@ def gestisci_click_dispensa(context, page, elemento, cartella, testo, debug):
         return False
 
 
+def _tutte_le_righe_dispensa(page):
+    """Ritorna [(frame, elemento)] per ogni riga dispensa in qualsiasi frame."""
+    righe = []
+    for frame in tutti_i_frame(page):
+        try:
+            for el in frame.query_selector_all(DISPENSA_SELECTOR):
+                righe.append((frame, el))
+        except Exception:
+            pass
+    return righe
+
+
 def raccogli_ed_estrai_dispense(context, page, cartella, debug):
-    """Trova le righe 'dispensa' (classe dedicata) e scarica ciò che trovano,
-    sia link diretti (<a href>) sia righe cliccabili via JavaScript."""
+    """Trova le righe 'dispensa' (classe dedicata, in qualsiasi frame) e scarica
+    ciò che trovano, sia link diretti (<a href>) sia righe cliccabili via JS."""
     scaricati = 0
     indice = 0
     tentativi_riapertura = 0
     while True:
-        elementi = page.query_selector_all(DISPENSA_SELECTOR)
+        righe = _tutte_le_righe_dispensa(page)
         if debug and indice == 0:
-            print(f"   📚 righe dispensa individuate: {len(elementi)}")
-        if indice >= len(elementi):
-            if not elementi and tentativi_riapertura < 2:
+            print(f"   📚 righe dispensa individuate (tutti i frame): {len(righe)}")
+        if indice >= len(righe):
+            if not righe and tentativi_riapertura < 2:
                 tentativi_riapertura += 1
                 if debug:
                     print("   🔁 nessuna riga visibile: riprovo ad espandere...")
@@ -261,7 +328,7 @@ def raccogli_ed_estrai_dispense(context, page, cartella, debug):
                 continue
             break
 
-        el = elementi[indice]
+        frame, el = righe[indice]
         testo = (el.inner_text() or "").strip() or f"dispensa-{indice + 1}"
         href = el.get_attribute("href")
         if not href:
@@ -269,7 +336,7 @@ def raccogli_ed_estrai_dispense(context, page, cartella, debug):
             href = figlio.get_attribute("href") if figlio else None
 
         if href:
-            url = urljoin(page.url, href)
+            url = urljoin(frame.url, href)
             ok = salva_pdf(context, url, cartella, testo, debug)
             if not ok:
                 try:
@@ -296,19 +363,24 @@ def raccogli_ed_estrai_dispense(context, page, cartella, debug):
 
 
 def raccogli_link_candidati(page):
-    """Ritorna [(url, testo)] dei link che sembrano dispense/PDF."""
+    """Ritorna [(url, testo)] dei link che sembrano dispense/PDF (in qualsiasi frame)."""
     candidati = []
-    for a in page.query_selector_all("a[href]"):
-        href = a.get_attribute("href") or ""
-        if not href or href.startswith(("#", "javascript:", "mailto:")):
+    for frame in tutti_i_frame(page):
+        try:
+            links = frame.query_selector_all("a[href]")
+        except Exception:
             continue
-        url = urljoin(page.url, href)
-        testo = (a.inner_text() or "").strip()
-        low = (href + " " + testo).lower()
-        pare_pdf = href.lower().split("?")[0].endswith(".pdf")
-        pare_dispensa = any(p in low for p in PAROLE_DISPENSA)
-        if pare_pdf or pare_dispensa:
-            candidati.append((url, testo or nome_da_url(url) or "dispensa"))
+        for a in links:
+            href = a.get_attribute("href") or ""
+            if not href or href.startswith(("#", "javascript:", "mailto:")):
+                continue
+            url = urljoin(frame.url, href)
+            testo = (a.inner_text() or "").strip()
+            low = (href + " " + testo).lower()
+            pare_pdf = href.lower().split("?")[0].endswith(".pdf")
+            pare_dispensa = any(p in low for p in PAROLE_DISPENSA)
+            if pare_pdf or pare_dispensa:
+                candidati.append((url, testo or nome_da_url(url) or "dispensa"))
     # dedup mantenendo l'ordine
     visti, out = set(), []
     for url, testo in candidati:
@@ -324,7 +396,16 @@ def elabora_pagina(context, url_pagina: str, cartella_base: Path, debug: bool) -
     try:
         print(f"\n🌐 Apro: {url_pagina}")
         page.goto(url_pagina, wait_until="domcontentloaded", timeout=45000)
-        page.wait_for_timeout(1500)
+        # Le web-app moderne (React/Vue) montano i contenuti DOPO il
+        # caricamento del documento: aspettiamo anche la rete "a riposo",
+        # ma senza bloccarci se la pagina fa polling continuo (es. notifiche).
+        try:
+            page.wait_for_load_state("networkidle", timeout=8000)
+        except PWTimeout:
+            pass
+        page.wait_for_timeout(2000)
+
+        diagnosi_pagina(page, debug)
 
         # nome cartella del corso = titolo pagina
         titolo = pulisci_nome(page.title() or "corso")
