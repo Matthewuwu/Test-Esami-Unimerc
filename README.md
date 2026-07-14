@@ -1,111 +1,78 @@
-# Banca Dati Esami — Unimerc
+# Test Esami Unimerc
 
-App per studiare gli esami universitari: inserisci tutte le **domande e risposte**
-della tua banca dati e usa Claude per **controllare che le risposte siano corrette**
-(anti-allucinazioni) e per **valutare le tue risposte** durante il ripasso.
+Due strumenti per gli esami all'Università Mercatorum:
 
-È una singola pagina HTML: funziona su **PC e telefono**, senza installare nulla.
-
-## Come si usa
-
-1. Apri **`index.html`** (doppio clic) oppure pubblicalo su GitHub Pages per averlo come sito.
-2. Crea le tue **materie/esami** (pulsante `＋ Materia`).
-3. Aggiungi **domande e risposte** nella banca dati:
-   - una alla volta col modulo, **oppure**
-   - **📥 Importa in blocco**: incolla anche 40-50 coppie alla volta (formato
-     `D:` / `R:`, o JSON). Se hai solo le domande, l'app ti dà un **prompt pronto
-     per Gemini**: lo incolli in Gemini con le domande, e la sua risposta entra
-     nell'app senza ritocchi.
-4. Usa i pulsanti in alto:
-   - **📖 Studia** — flashcard: leggi la domanda e riveli la risposta.
-   - **✍️ Quiz** — scrivi la tua risposta e Claude la valuta con un voto.
-   - **🔍 Verifica** — Claude controlla che le risposte salvate siano corrette.
-     Le banche dati grandi (**500-600 domande**) vengono controllate **a lotti**
-     (es. 20 per volta), saltando quelle già verificate: puoi fermarti e
-     riprendere quando vuoi. In modalità API i lotti scorrono in automatico.
-   - **💾 Dati** — backup (esporta/importa `.json`) e copia della banca dati.
-
-I dati sono salvati nel **browser** (localStorage). Usa **💾 Dati → Esporta backup**
-per non perderli o per spostarli su un altro dispositivo.
-
-## Controllo AI: due modalità (⚙️ Impostazioni)
-
-- **Abbonamento Claude (consigliata, gratis)** — l'app prepara un prompt già pronto:
-  lo **copi in Claude Code** (o nell'app Claude / Claude.ai), incolli indietro la
-  risposta e l'app la interpreta da sola. Usa l'abbonamento che hai già, **senza
-  consumare token a pagamento**.
-- **Chiave API (automatica)** — controllo con un clic, ma consuma token API.
-  Inserisci la tua chiave (`console.anthropic.com`); resta solo nel tuo browser.
-
-## Pubblicare come sito (opzionale)
-
-GitHub → **Settings → Pages → Branch: main → /(root)**. L'app sarà raggiungibile
-da qualsiasi dispositivo via browser.
+| Strumento | A cosa serve | Come si usa |
+|---|---|---|
+| **App di studio** (`index.html`) | Banca dati domande/risposte, flashcard, quiz con AI | La apri nel browser (PC e telefono) |
+| **Scarica dispense** (`dispense.sh`) | Scarica i PDF delle lezioni dal portale LMS nella tua cartella kDrive | Un solo comando nel terminale |
 
 ---
 
-## Scaricare le dispense PDF (script locale) — `scarica_dispense.py`
-
-Strumento **separato** dall'app (uno script Python che gira sul tuo PC Linux):
-scarica le dispense PDF dal portale LMS **Mercatorum**
-(`lms.mercatorum.multiversity.click`) riusando la tua sessione di login,
-e le salva in `/home/mattia/kDrive/Universita/Management per l'impresa`.
-
-> ⚠️ L'app HTML nel browser **non può** fare questo (blocco CORS + impossibile
-> scrivere in cartelle arbitrarie). Per lo scraping con login serve un programma
-> locale: ecco perché è uno script a parte.
-
-### Installazione (una volta)
-
-Su Arch/Manjaro `pip` non può installare a livello di sistema
-(`externally-managed-environment`): serve un **ambiente virtuale**. Fai tutto
-con lo script pronto:
+## 🚀 Installazione (UNA volta sola)
 
 ```bash
-./setup.sh
+git clone -b claude/youthful-volta-gvi4kz https://github.com/Matthewuwu/Test-Esami-Unimerc.git ~/Test-Esami-Unimerc
+cd ~/Test-Esami-Unimerc
+chmod +x dispense.sh
 ```
 
-Oppure a mano:
+Da qui in poi **non servono altri comandi di installazione o aggiornamento**:
+`dispense.sh` si aggiorna e si prepara da solo a ogni avvio.
+
+---
+
+## 📥 Scaricare le dispense
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install playwright
-playwright install chromium
+cd ~/Test-Esami-Unimerc
+
+# una lezione (con --debug prima, per vedere cosa trova senza scaricare)
+./dispense.sh "https://lms.mercatorum.multiversity.click/videolezioni/0142509SECSP08I/52" --debug
+
+# quando i risultati sono giusti, togli --debug e scarica davvero
+./dispense.sh "https://lms.mercatorum.multiversity.click/videolezioni/0142509SECSP08I/52"
+
+# tante lezioni insieme: mettile (una per riga) in scraper/dispense_urls.txt e poi
+./dispense.sh
 ```
 
-> L'avviso `BEWARE: your OS is not officially supported ... fallback build for
-> ubuntu24.04` è normale su Arch e non è un errore: la build di Ubuntu funziona.
+- Alla **prima esecuzione** si apre un browser: fai il **login** al portale e premi INVIO nel terminale. Il login resta memorizzato.
+- I PDF finiscono in `/home/mattia/kDrive/Universita/Management per l'impresa` (cartella per corso). Cambi destinazione con `--out "/altro/percorso"`.
+- I file già scaricati vengono **saltati**: puoi rilanciare quando vuoi.
 
-### Uso
+---
 
-Con lo script `./avvia.sh` (attiva il venv da solo):
+## 🎓 App di studio
 
-```bash
-./avvia.sh "https://lms.mercatorum.multiversity.click/videolezioni/CODICE-CORSO/NUMERO" --debug
+Apri `index.html` (doppio clic) dalla cartella del progetto — dopo un
+aggiornamento è già la versione nuova, perché `dispense.sh` fa anche il `git pull`.
+
+Se il repo è **pubblico** puoi attivare GitHub Pages
+(**Settings → Pages → Deploy from a branch → `claude/youthful-volta-gvi4kz` → `/ (root)`**)
+e l'app diventa un sito, sempre aggiornato, raggiungibile anche dal telefono:
+
+> `https://matthewuwu.github.io/Test-Esami-Unimerc/`
+
+Dentro l'app:
+- **📥 Importa in blocco** — incolla 40-50 coppie `D:`/`R:` alla volta (anche generate con Gemini: c'è il prompt pronto).
+- **📖 Studia** — flashcard. **✍️ Quiz** — rispondi e l'AI ti valuta. **🔍 Verifica** — l'AI controlla le risposte salvate (a lotti).
+- **💾 Dati** — backup/ripristino in `.json` (i dati vivono nel browser: esporta ogni tanto!).
+
+---
+
+## 🔄 Aggiornamenti
+
+Niente da fare: **ogni `./dispense.sh` si auto-aggiorna**. Per aggiornare solo
+l'app senza lanciare lo scraper: `git pull`.
+
+## Struttura del repo
+
 ```
-
-Oppure attivando il venv a mano (`source .venv/bin/activate`) e poi:
-
-```bash
-# 1ª volta: si apre una finestra, fai il LOGIN al portale, poi premi INVIO
-python3 scarica_dispense.py "https://lms.mercatorum.multiversity.click/videolezioni/CODICE-CORSO/NUMERO"
-
-# più pagine insieme
-python3 scarica_dispense.py URL1 URL2 URL3
-
-# oppure metti gli URL (uno per riga) in dispense_urls.txt e lancia senza argomenti
-python3 scarica_dispense.py
-
-# per vedere cosa trova SENZA scaricare (utile per tarare)
-python3 scarica_dispense.py "URL" --debug
-
-# dopo il primo login, puoi girare senza finestra
-python3 scarica_dispense.py --headless
+index.html                  → l'app di studio (un solo file)
+dispense.sh                 → UNICO comando per lo scraper (auto-update + auto-setup)
+scraper/
+  scarica_dispense.py       → lo scraper vero e proprio
+  dispense_urls.txt         → elenco lezioni da scaricare in blocco
+  requirements.txt          → dipendenze Python
 ```
-
-Il login viene chiesto **una sola volta**: la sessione resta salvata in
-`~/.config/scarica-dispense/profilo`. I file già scaricati vengono saltati.
-La cartella di destinazione si cambia in cima allo script (`CARTELLA_DESTINAZIONE`)
-o con `--out`.
-

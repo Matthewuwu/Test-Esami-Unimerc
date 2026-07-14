@@ -1,0 +1,7 @@
+# ambiente locale — mai nel repo
+.venv/
+__pycache__/
+*.pyc
+
+# eventuali backup personali della banca dati (dati tuoi, non del progetto)
+banca-dati-esami*.json
