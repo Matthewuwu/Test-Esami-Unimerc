@@ -207,49 +207,136 @@ def diagnosi_pagina(page, debug):
         pass
 
 
-def espandi_sezioni_dispense(page, debug=False):
-    """Clicca i toggle che rivelano le dispense (in qualsiasi frame). Ritorna
-    quanti ne ha aperti."""
-    aperti = 0
-    for frame in tutti_i_frame(page):
-        try:
-            toggles = frame.query_selector_all(TOGGLE_SELECTOR)
-        except Exception:
-            continue
-        if debug and toggles:
-            etichetta = "pagina principale" if frame == page.main_frame else frame.url
-            print(f"   🔧 toggle individuati via classe in [{etichetta}]: {len(toggles)}")
-        for t in toggles:
-            try:
-                if t.is_visible():
-                    t.click(timeout=1500)
-                    page.wait_for_timeout(400)
-                    aperti += 1
-            except Exception:
-                pass
-    if aperti:
-        page.wait_for_timeout(500)
-        return aperti
+_ATTRIBUTO_TOGGLE_FATTO = "data-sd-toggle-fatto"
 
-    # Fallback: ricerca testuale, nel caso la classe sia cambiata o non trovata.
-    for frame in tutti_i_frame(page):
-        for parola in ["Dispens", "Materiale", "Materiali"]:
+# JS: scorre in avanti QUALSIASI contenitore scrollabile della pagina (non solo
+# quello delle lezioni), per far comparire righe di eventuali liste
+# virtualizzate (accordion con tante sotto-sezioni, dispense, ecc.).
+# Ritorna True se ha effettivamente scrollato qualcosa.
+_JS_SCORRI_QUALSIASI_CONTENITORE = r"""
+() => {
+    const contenitori = [...document.querySelectorAll('*')].filter(e => {
+        if (e.scrollHeight <= e.clientHeight + 4) return false;
+        const overflowY = getComputedStyle(e).overflowY;
+        return overflowY === 'auto' || overflowY === 'scroll';
+    });
+    let scrollato = false;
+    for (const el of contenitori) {
+        const inFondo = el.scrollTop + el.clientHeight >= el.scrollHeight - 2;
+        if (!inFondo) {
+            el.scrollTop = Math.min(el.scrollTop + el.clientHeight * 0.7, el.scrollHeight);
+            scrollato = true;
+        }
+    }
+    return scrollato;
+}
+"""
+
+
+def _icona_toggle(el):
+    """Ritorna 'aperto'/'chiuso'/None leggendo l'icona a freccia (chevron)
+    vicina all'elemento (sale fino a qualche livello di antenati). Serve per
+    NON ricliccare (e quindi richiudere) un toggle già aperto."""
+    try:
+        html = el.evaluate(
+            """(node) => {
+                let p = node;
+                for (let i = 0; i < 5 && p; i++) {
+                    const svg = p.querySelector('svg');
+                    if (svg) return svg.outerHTML || '';
+                    p = p.parentElement;
+                }
+                return '';
+            }"""
+        )
+    except Exception:
+        return None
+    if not html:
+        return None
+    if "chevron-up" in html:
+        return "aperto"
+    if "chevron-down" in html:
+        return "chiuso"
+    return None
+
+
+def espandi_sezioni_dispense(page, debug=False):
+    """Espande TUTTI i pannelli/toggle della pagina (Dispense e qualunque
+    accordion annidato, es. i singoli argomenti del corso), scorrendo i
+    contenitori per far comparire anche righe di liste virtualizzate.
+    Marca ogni elemento nel DOM una volta esaminato (non si basa sul testo,
+    che può ripetersi identico in più sezioni, es. tante voci "Dispense").
+    Evita di cliccare toggle già aperti (controllo icona chevron). Ritorna
+    quanti ne ha effettivamente aperti."""
+    selettore_da_fare = TOGGLE_SELECTOR + f":not([{_ATTRIBUTO_TOGGLE_FATTO}])"
+    aperti = 0
+    esaminati = 0
+    giri_senza_novita = 0
+    for _ in range(400):  # limite di sicurezza anti-loop-infinito
+        trovato_qualcosa = False
+        for frame in tutti_i_frame(page):
             try:
-                elementi = frame.query_selector_all(f"text=/{parola}/i")
+                toggles = frame.query_selector_all(selettore_da_fare)
             except Exception:
                 continue
-            for el in elementi:
+            for t in toggles:
                 try:
-                    if el.is_visible():
-                        el.click(timeout=1500)
-                        page.wait_for_timeout(400)
+                    t.evaluate(f"el => el.setAttribute('{_ATTRIBUTO_TOGGLE_FATTO}', '1')")
+                except Exception:
+                    pass
+                esaminati += 1
+                trovato_qualcosa = True
+                stato = _icona_toggle(t)
+                if stato == "aperto":
+                    continue  # già aperto: non toccarlo o lo richiuderemmo
+                try:
+                    if t.is_visible():
+                        t.click(timeout=1500)
+                        page.wait_for_timeout(350)
                         aperti += 1
                 except Exception:
                     pass
+        if trovato_qualcosa:
+            giri_senza_novita = 0
+            continue
+        # Nessun toggle nuovo in questo giro: prova a scorrere per farne
+        # comparire altri (liste virtualizzate).
+        try:
+            scrollato = page.evaluate(_JS_SCORRI_QUALSIASI_CONTENITORE)
+        except Exception:
+            scrollato = False
+        if scrollato:
+            page.wait_for_timeout(350)
+            giri_senza_novita = 0
+            continue
+        giri_senza_novita += 1
+        if giri_senza_novita >= 2:
+            break
+
+    if debug:
+        print(f"   🔧 toggle esaminati (con scroll): {esaminati}, aperti: {aperti}")
+
+    if esaminati == 0:
+        # Fallback: ricerca testuale, nel caso la classe sia cambiata o non trovata.
+        for frame in tutti_i_frame(page):
+            for parola in ["Dispens", "Materiale", "Materiali"]:
+                try:
+                    elementi = frame.query_selector_all(f"text=/{parola}/i")
+                except Exception:
+                    continue
+                for el in elementi:
+                    try:
+                        if el.is_visible():
+                            el.click(timeout=1500)
+                            page.wait_for_timeout(400)
+                            aperti += 1
+                    except Exception:
+                        pass
+                if aperti:
+                    break
             if aperti:
                 break
-        if aperti:
-            break
+
     if aperti:
         page.wait_for_timeout(500)
     return aperti
@@ -311,56 +398,93 @@ def _tutte_le_righe_dispensa(page):
     return righe
 
 
+_ATTRIBUTO_DISPENSA_FATTA = "data-sd-dispensa-fatta"
+
+
 def raccogli_ed_estrai_dispense(context, page, cartella, debug):
     """Trova le righe 'dispensa' (classe dedicata, in qualsiasi frame) e scarica
-    ciò che trovano, sia link diretti (<a href>) sia righe cliccabili via JS."""
+    ciò che trovano, sia link diretti (<a href>) sia righe cliccabili via JS.
+    Loop unico: prova a processare una riga nuova; se non ce ne sono, prova ad
+    aprire altri toggle (potrebbero rivelarne altre, es. dentro un argomento
+    del corso appena espanso) e a scorrere eventuali contenitori virtualizzati.
+    Si ferma solo quando nessuna delle tre cose produce più niente di nuovo."""
     scaricati = 0
-    indice = 0
-    tentativi_riapertura = 0
-    while True:
+    prima_volta = True
+    giri_senza_novita = 0
+    for _ in range(2000):  # limite di sicurezza anti-loop-infinito
         righe = _tutte_le_righe_dispensa(page)
-        if debug and indice == 0:
-            print(f"   📚 righe dispensa individuate (tutti i frame): {len(righe)}")
-        if indice >= len(righe):
-            if not righe and tentativi_riapertura < 2:
-                tentativi_riapertura += 1
-                if debug:
-                    print("   🔁 nessuna riga visibile: riprovo ad espandere...")
-                espandi_sezioni_dispense(page, debug=False)
-                page.wait_for_timeout(500)
-                continue
-            break
+        if prima_volta:
+            if debug:
+                print(f"   📚 righe dispensa individuate (tutti i frame): {len(righe)}")
+            prima_volta = False
 
-        frame, el = righe[indice]
-        testo = (el.inner_text() or "").strip() or f"dispensa-{indice + 1}"
-        href = el.get_attribute("href")
-        if not href:
-            figlio = el.query_selector("a[href]")
-            href = figlio.get_attribute("href") if figlio else None
+        riga_da_fare = None
+        for frame, el in righe:
+            try:
+                gia_fatta = el.get_attribute(_ATTRIBUTO_DISPENSA_FATTA)
+            except Exception:
+                gia_fatta = None
+            if not gia_fatta:
+                riga_da_fare = (frame, el)
+                break
 
-        if href:
-            url = urljoin(frame.url, href)
-            ok = salva_pdf(context, url, cartella, testo, debug)
-            if not ok:
-                try:
-                    tmp = context.new_page()
-                    tmp.goto(url, wait_until="domcontentloaded", timeout=30000)
-                    tmp.wait_for_timeout(600)
-                    url_pdf = trova_url_pdf_nella_pagina(tmp)
-                    tmp.close()
-                    if url_pdf:
-                        ok = salva_pdf(context, url_pdf, cartella, testo, debug)
-                except Exception as e:
-                    if debug:
-                        print(f"   ⚠️  {url}: {e}")
+        if riga_da_fare is not None:
+            frame, el = riga_da_fare
+            try:
+                el.evaluate(f"el => el.setAttribute('{_ATTRIBUTO_DISPENSA_FATTA}', '1')")
+            except Exception:
+                pass
+            testo = (el.inner_text() or "").strip() or "dispensa"
+            href = el.get_attribute("href")
+            if not href:
+                figlio = el.query_selector("a[href]")
+                href = figlio.get_attribute("href") if figlio else None
+
+            ok = False
+            if href:
+                url = urljoin(frame.url, href)
+                ok = salva_pdf(context, url, cartella, testo, debug)
+                if not ok:
+                    try:
+                        tmp = context.new_page()
+                        tmp.goto(url, wait_until="domcontentloaded", timeout=30000)
+                        tmp.wait_for_timeout(600)
+                        url_pdf = trova_url_pdf_nella_pagina(tmp)
+                        tmp.close()
+                        if url_pdf:
+                            ok = salva_pdf(context, url_pdf, cartella, testo, debug)
+                    except Exception as e:
+                        if debug:
+                            print(f"   ⚠️  {url}: {e}")
+            else:
+                ok = gestisci_click_dispensa(context, page, el, cartella, testo, debug)
+
             if ok:
                 scaricati += 1
-        else:
-            if gestisci_click_dispensa(context, page, el, cartella, testo, debug):
-                scaricati += 1
+            giri_senza_novita = 0
+            continue
 
-        indice += 1
-        tentativi_riapertura = 0
+        # Nessuna riga dispensa nuova: forse aprendo altri toggle (es. un
+        # argomento del corso non ancora esaminato) ne comparirebbero altre.
+        aperti = espandi_sezioni_dispense(page, debug=False)
+        if aperti:
+            page.wait_for_timeout(400)
+            giri_senza_novita = 0
+            continue
+
+        # Ancora nulla: prova a scorrere eventuali contenitori virtualizzati.
+        try:
+            scrollato = page.evaluate(_JS_SCORRI_QUALSIASI_CONTENITORE)
+        except Exception:
+            scrollato = False
+        if scrollato:
+            page.wait_for_timeout(400)
+            giri_senza_novita = 0
+            continue
+
+        giri_senza_novita += 1
+        if giri_senza_novita >= 2:
+            break
 
     return scaricati
 
