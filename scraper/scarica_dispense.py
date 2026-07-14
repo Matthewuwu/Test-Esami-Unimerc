@@ -462,61 +462,85 @@ def estrai_codice_corso(url):
     return m.group(1) if m else None
 
 
-def trova_link_lezioni_corso(page, codice_corso):
-    """Cerca (in tutti i frame) i link ad altre lezioni dello stesso corso,
-    riconoscendoli dal pattern .../videolezioni/CODICE/NUMERO.
-    Ritorna {numero_lezione: url}."""
-    trovate = {}
-    pattern = re.compile(r"/videolezioni/" + re.escape(codice_corso) + r"/(\d+)")
+"""
+NOTA sulla scoperta (analisi HTML reale del 2026-07-14)
+--------------------------------------------------------
+Il pannello "Contenuti del Corso" NON usa link <a href> per le lezioni: sono
+<div> cliccabili gestiti via JS/router (stessa app Vue/Tailwind delle
+dispense). Le righe di lezione hanno la STESSA classe del toggle
+(TOGGLE_SELECTOR / TOGGLE_CLASSI) e testo tipo "1 - Le risorse nel sistema
+impresa", "2 - Le competenze", ecc. Non c'è quindi nulla da "espandere" via
+aria-expanded (quell'attributo non compare nell'HTML del portale): bisogna
+invece CLICCARE ogni riga numerata e leggere l'URL a cui porta.
+"""
+
+PATTERN_RIGA_LEZIONE = re.compile(r"^\s*(\d+)\s*-\s*.+")
+
+
+def _righe_lezione_candidate(page):
+    """Ritorna [(elemento, testo)] delle righe che sembrano lezioni del corso
+    (stessa classe dei toggle, testo del tipo 'N - Titolo')."""
+    righe = []
     for frame in tutti_i_frame(page):
         try:
-            links = frame.query_selector_all("a[href]")
+            elementi = frame.query_selector_all(TOGGLE_SELECTOR)
         except Exception:
             continue
-        for a in links:
-            href = a.get_attribute("href") or ""
-            m = pattern.search(href)
-            if m:
-                trovate[m.group(1)] = urljoin(frame.url, href)
-    return trovate
+        for el in elementi:
+            try:
+                testo = (el.inner_text() or "").strip()
+            except Exception:
+                continue
+            if PATTERN_RIGA_LEZIONE.match(testo):
+                righe.append((el, testo))
+    return righe
 
 
-def espandi_tutte_le_sezioni_corso(page, debug=False):
-    """Apre ogni sezione del pannello 'Contenuti del Corso' che risulti chiusa
-    (attributo aria-expanded="false"), così eventuali link alle lezioni che
-    l'app monta solo dopo l'espansione diventino visibili nel DOM."""
+def _espandi_pannello_lezioni(page, debug=False):
+    """Clicca il toggle di livello superiore (testo esatto 'lezioni') del
+    pannello 'Contenuti del Corso', se presente e non già aperto."""
     aperti = 0
     for frame in tutti_i_frame(page):
         try:
-            chiusi = frame.query_selector_all('[aria-expanded="false"]')
+            elementi = frame.query_selector_all(TOGGLE_SELECTOR)
         except Exception:
             continue
-        for el in chiusi:
+        for el in elementi:
             try:
-                if el.is_visible():
-                    el.click(timeout=1200)
-                    page.wait_for_timeout(250)
-                    aperti += 1
+                testo = (el.inner_text() or "").strip().lower()
             except Exception:
-                pass
+                continue
+            if testo == "lezioni":
+                try:
+                    if el.is_visible():
+                        el.click(timeout=1500)
+                        page.wait_for_timeout(400)
+                        aperti += 1
+                except Exception:
+                    pass
     if debug:
-        print(f"   📂 sezioni del corso espanse: {aperti}")
+        print(f"   📂 pannello 'lezioni' aperto: {aperti}")
     if aperti:
         page.wait_for_timeout(500)
     return aperti
 
 
 def scopri_lezioni_corso(context, url_iniziale, debug):
-    """Apre la pagina di partenza e prova a raccogliere i link a TUTTE le
-    lezioni dello stesso corso. Ritorna {numero_lezione: url}."""
+    """Apre la pagina di partenza, apre il pannello 'Contenuti del Corso' e
+    clicca ogni riga di lezione per scoprire l'URL a cui porta.
+    Ritorna {numero_lezione: url}."""
     codice = estrai_codice_corso(url_iniziale)
     if not codice:
         if debug:
             print(f"   ⚠️  URL non riconosciuto come lezione del portale: {url_iniziale}")
         return {}
 
+    pattern_url = re.compile(r"/videolezioni/" + re.escape(codice) + r"/(\d+)")
+    # La lezione di partenza è comunque nota.
+    m0 = pattern_url.search(url_iniziale)
+    trovate = {m0.group(1): url_iniziale} if m0 else {}
+
     page = context.new_page()
-    trovate = {}
     try:
         page.goto(url_iniziale, wait_until="domcontentloaded", timeout=45000)
         try:
@@ -525,12 +549,51 @@ def scopri_lezioni_corso(context, url_iniziale, debug):
             pass
         page.wait_for_timeout(1500)
 
-        trovate = trova_link_lezioni_corso(page, codice)
-        if len(trovate) <= 1:
-            # Forse le altre sezioni sono chiuse e i link non sono nel DOM:
-            # proviamo ad aprirle e ricontrolliamo.
-            espandi_tutte_le_sezioni_corso(page, debug)
-            trovate = trova_link_lezioni_corso(page, codice)
+        righe = _righe_lezione_candidate(page)
+        if not righe:
+            _espandi_pannello_lezioni(page, debug)
+            righe = _righe_lezione_candidate(page)
+
+        if debug:
+            print(f"   📚 righe lezione individuate nel pannello: {len(righe)}")
+
+        indice = 0
+        while indice < len(righe):
+            # Ri-query ad ogni giro: dopo un go_back il DOM può essere ricreato
+            # e i riferimenti agli elementi precedenti diventerebbero stantii.
+            righe_correnti = _righe_lezione_candidate(page)
+            if indice >= len(righe_correnti):
+                break
+            el, testo = righe_correnti[indice]
+            url_prima = page.url
+            try:
+                if el.is_visible():
+                    el.click(timeout=2000)
+                    page.wait_for_timeout(700)
+                    m = pattern_url.search(page.url)
+                    if m:
+                        nuovo = m.group(1) not in trovate
+                        trovate[m.group(1)] = page.url
+                        if debug:
+                            segno = "➕" if nuovo else "="
+                            print(f"      {segno} {testo!r} -> lezione {m.group(1)}: {page.url}")
+                    elif debug:
+                        print(f"      ↷ {testo!r}: URL non riconosciuto dopo il click ({page.url})")
+                    if page.url != url_prima:
+                        page.go_back(wait_until="domcontentloaded", timeout=15000)
+                        try:
+                            page.wait_for_load_state("networkidle", timeout=8000)
+                        except PWTimeout:
+                            pass
+                        page.wait_for_timeout(700)
+                        if not _righe_lezione_candidate(page):
+                            _espandi_pannello_lezioni(page, debug=False)
+                elif debug:
+                    print(f"      ↷ riga non visibile: {testo!r}")
+            except Exception as e:
+                if debug:
+                    print(f"      ⚠️  errore sulla riga {testo!r}: {e}")
+            indice += 1
     except Exception as e:
         if debug:
             print(f"   ⚠️  scoperta lezioni fallita: {e}")
