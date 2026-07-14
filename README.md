@@ -47,7 +47,8 @@ da qualsiasi dispositivo via browser.
 ## Scaricare le dispense PDF (script locale) — `scarica_dispense.py`
 
 Strumento **separato** dall'app (uno script Python che gira sul tuo PC Linux):
-scarica le dispense PDF da **Unimercatorum** riusando la tua sessione di login,
+scarica le dispense PDF dal portale LMS **Mercatorum**
+(`lms.mercatorum.multiversity.click`) riusando la tua sessione di login,
 e le salva in `/home/mattia/kDrive/Universita/Management per l'impresa`.
 
 > ⚠️ L'app HTML nel browser **non può** fare questo (blocco CORS + impossibile
@@ -81,14 +82,14 @@ playwright install chromium
 Con lo script `./avvia.sh` (attiva il venv da solo):
 
 ```bash
-./avvia.sh "https://www.unimercatorum.it/.../lezione" --debug
+./avvia.sh "https://lms.mercatorum.multiversity.click/videolezioni/CODICE-CORSO/NUMERO" --debug
 ```
 
 Oppure attivando il venv a mano (`source .venv/bin/activate`) e poi:
 
 ```bash
-# 1ª volta: si apre una finestra, fai il LOGIN a Unimercatorum, poi premi INVIO
-python3 scarica_dispense.py "https://www.unimercatorum.it/.../pagina-del-corso"
+# 1ª volta: si apre una finestra, fai il LOGIN al portale, poi premi INVIO
+python3 scarica_dispense.py "https://lms.mercatorum.multiversity.click/videolezioni/CODICE-CORSO/NUMERO"
 
 # più pagine insieme
 python3 scarica_dispense.py URL1 URL2 URL3

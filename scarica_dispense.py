@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-scarica_dispense.py — Scarica le dispense PDF da Unimercatorum (o portali simili)
+scarica_dispense.py — Scarica le dispense PDF dal portale LMS Mercatorum (o portali simili)
 riusando la TUA sessione autenticata (login fatto una volta in un browser vero).
 
 Come funziona
@@ -51,8 +51,8 @@ except ImportError:
 # ============================================================
 CARTELLA_DESTINAZIONE = "/home/mattia/kDrive/Universita/Management per l'impresa"
 
-# Dominio del portale: usato per capire cosa è "interno" e per il login.
-DOMINIO = "unimercatorum.it"
+# Dominio del portale (LMS): usato per il controllo del login.
+DOMINIO = "lms.mercatorum.multiversity.click"
 
 # Cartella dove viene salvata la sessione del browser (login persistente).
 PROFILO = str(Path.home() / ".config" / "scarica-dispense" / "profilo")
@@ -228,18 +228,25 @@ def elabora_pagina(context, url_pagina: str, cartella_base: Path, debug: bool) -
 # ============================================================
 # LOGIN
 # ============================================================
-def assicura_login(context, headless: bool):
+def assicura_login(context, headless: bool, url_prova: str = None):
     page = context.new_page()
-    page.goto(f"https://www.{DOMINIO}/", wait_until="domcontentloaded", timeout=45000)
-    # euristica: se troviamo un campo password, probabilmente non siamo loggati
-    serve_login = page.query_selector("input[type='password']") is not None
+    # Usa una pagina reale del portale (più affidabile della home per capire
+    # se siamo autenticati): quella passata da riga di comando, o il dominio base.
+    target = url_prova or f"https://{DOMINIO}/"
+    page.goto(target, wait_until="domcontentloaded", timeout=45000)
+    page.wait_for_timeout(1000)
+    # euristica: se troviamo un campo password, o veniamo rimandati a una
+    # pagina di login, probabilmente non siamo autenticati.
+    ha_campo_password = page.query_selector("input[type='password']") is not None
+    sembra_login = bool(re.search(r"login|accedi|sign[-_]?in", page.url, re.I))
+    serve_login = ha_campo_password or sembra_login
     page.close()
 
     if serve_login:
         if headless:
             sys.exit("🔒 Non risulti loggato ma sei in --headless.\n"
                      "   Lancia una prima volta SENZA --headless per fare il login.")
-        print("\n🔐 Fai il LOGIN a Unimercatorum nella finestra che si è aperta.")
+        print("\n🔐 Fai il LOGIN al portale nella finestra che si è aperta.")
         print("   Quando sei dentro e vedi la tua area studenti, torna qui e premi INVIO.")
         input("   ▶️  Premi INVIO per continuare...  ")
     else:
@@ -260,7 +267,7 @@ def leggi_urls(args_urls):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Scarica le dispense PDF da Unimercatorum.")
+    ap = argparse.ArgumentParser(description="Scarica le dispense PDF dal portale LMS Mercatorum.")
     ap.add_argument("urls", nargs="*", help="URL delle pagine corso/lezione con le dispense")
     ap.add_argument("--headless", action="store_true", help="Senza finestra (solo dopo il primo login)")
     ap.add_argument("--debug", action="store_true", help="Mostra cosa trova senza scaricare a vuoto")
@@ -285,7 +292,7 @@ def main():
             viewport={"width": 1280, "height": 900},
         )
         try:
-            assicura_login(context, args.headless)
+            assicura_login(context, args.headless, url_prova=urls[0])
             for url in urls:
                 totale += elabora_pagina(context, url, cartella_base, args.debug)
         finally:
