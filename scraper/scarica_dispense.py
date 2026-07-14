@@ -9,20 +9,23 @@ Come funziona
 1. Apre un Chromium (Playwright) con un profilo salvato in locale.
 2. Alla prima esecuzione fai il LOGIN a mano nella finestra che si apre;
    la sessione resta memorizzata (le volte successive non serve rifarlo).
-3. Per ogni pagina che gli indichi (pagine dei corsi / lezioni), espande le
-   sezioni "Dispense" e scarica tutti i PDF che trova nella cartella di destinazione.
+3. Dato UN SOLO URL di lezione, scopre da solo tutte le ALTRE lezioni dello
+   stesso corso (pattern .../videolezioni/CODICE/NUMERO nel menù laterale),
+   ed espande/scarica le dispense PDF di ognuna nella cartella di destinazione.
 
 Uso tipico
 ----------
-    # prima volta: fai il login nella finestra, poi ENTER nel terminale
-    python3 scarica_dispense.py "https://.../pagina-del-corso"
+    # basta UNA lezione: trova da sola tutte le altre lezioni dello stesso corso
+    python3 scarica_dispense.py "https://.../videolezioni/CODICE/NUMERO"
 
-    # più pagine insieme
-    python3 scarica_dispense.py URL1 URL2 URL3
+    # più corsi insieme (ognuno scoperto ed elaborato per intero)
+    python3 scarica_dispense.py URL_CORSO_1 URL_CORSO_2
 
     # oppure metti gli URL (uno per riga) in dispense_urls.txt e lancia:
     python3 scarica_dispense.py
 
+    # per scaricare SOLO gli URL indicati, senza scoprire il resto del corso:
+    #   --solo-queste-lezioni
     # senza finestra (dopo il primo login):  --headless
     # per capire cosa trova senza scaricare:  --debug
 
@@ -451,6 +454,117 @@ def elabora_pagina(context, url_pagina: str, cartella_base: Path, debug: bool) -
 
 
 # ============================================================
+# SCOPERTA AUTOMATICA DELLE ALTRE LEZIONI DELLO STESSO CORSO
+# ============================================================
+def estrai_codice_corso(url):
+    """Da '.../videolezioni/CODICE/NUMERO' estrae CODICE."""
+    m = re.search(r"/videolezioni/([^/?#]+)/\d+", url)
+    return m.group(1) if m else None
+
+
+def trova_link_lezioni_corso(page, codice_corso):
+    """Cerca (in tutti i frame) i link ad altre lezioni dello stesso corso,
+    riconoscendoli dal pattern .../videolezioni/CODICE/NUMERO.
+    Ritorna {numero_lezione: url}."""
+    trovate = {}
+    pattern = re.compile(r"/videolezioni/" + re.escape(codice_corso) + r"/(\d+)")
+    for frame in tutti_i_frame(page):
+        try:
+            links = frame.query_selector_all("a[href]")
+        except Exception:
+            continue
+        for a in links:
+            href = a.get_attribute("href") or ""
+            m = pattern.search(href)
+            if m:
+                trovate[m.group(1)] = urljoin(frame.url, href)
+    return trovate
+
+
+def espandi_tutte_le_sezioni_corso(page, debug=False):
+    """Apre ogni sezione del pannello 'Contenuti del Corso' che risulti chiusa
+    (attributo aria-expanded="false"), così eventuali link alle lezioni che
+    l'app monta solo dopo l'espansione diventino visibili nel DOM."""
+    aperti = 0
+    for frame in tutti_i_frame(page):
+        try:
+            chiusi = frame.query_selector_all('[aria-expanded="false"]')
+        except Exception:
+            continue
+        for el in chiusi:
+            try:
+                if el.is_visible():
+                    el.click(timeout=1200)
+                    page.wait_for_timeout(250)
+                    aperti += 1
+            except Exception:
+                pass
+    if debug:
+        print(f"   📂 sezioni del corso espanse: {aperti}")
+    if aperti:
+        page.wait_for_timeout(500)
+    return aperti
+
+
+def scopri_lezioni_corso(context, url_iniziale, debug):
+    """Apre la pagina di partenza e prova a raccogliere i link a TUTTE le
+    lezioni dello stesso corso. Ritorna {numero_lezione: url}."""
+    codice = estrai_codice_corso(url_iniziale)
+    if not codice:
+        if debug:
+            print(f"   ⚠️  URL non riconosciuto come lezione del portale: {url_iniziale}")
+        return {}
+
+    page = context.new_page()
+    trovate = {}
+    try:
+        page.goto(url_iniziale, wait_until="domcontentloaded", timeout=45000)
+        try:
+            page.wait_for_load_state("networkidle", timeout=8000)
+        except PWTimeout:
+            pass
+        page.wait_for_timeout(1500)
+
+        trovate = trova_link_lezioni_corso(page, codice)
+        if len(trovate) <= 1:
+            # Forse le altre sezioni sono chiuse e i link non sono nel DOM:
+            # proviamo ad aprirle e ricontrolliamo.
+            espandi_tutte_le_sezioni_corso(page, debug)
+            trovate = trova_link_lezioni_corso(page, codice)
+    except Exception as e:
+        if debug:
+            print(f"   ⚠️  scoperta lezioni fallita: {e}")
+    finally:
+        page.close()
+    return trovate
+
+
+def espandi_con_scoperta_corso(context, urls_iniziali, debug):
+    """Per ogni URL iniziale, scopre automaticamente le altre lezioni dello
+    stesso corso e le aggiunge all'elenco da elaborare (senza duplicati)."""
+    risultato = list(dict.fromkeys(urls_iniziali))  # dedup, mantiene l'ordine
+    corsi_gia_scoperti = set()
+
+    for url in urls_iniziali:
+        codice = estrai_codice_corso(url)
+        if not codice or codice in corsi_gia_scoperti:
+            continue
+        corsi_gia_scoperti.add(codice)
+        print(f"\n🔎 Scoperta automatica delle lezioni del corso «{codice}»...")
+        trovate = scopri_lezioni_corso(context, url, debug)
+        nuove = [u for u in trovate.values() if u not in risultato]
+        if trovate and nuove:
+            print(f"   ➕ {len(trovate)} lezioni individuate nel corso, {len(nuove)} nuove aggiunte")
+            risultato.extend(nuove)
+        elif trovate:
+            print(f"   ✅ {len(trovate)} lezioni individuate, già tutte nell'elenco")
+        else:
+            print("   ⚠️  nessuna lezione aggiuntiva trovata: userò solo l'URL indicato")
+
+    return risultato
+
+
+# ============================================================
 # LOGIN
 # ============================================================
 def assicura_login(context, headless: bool, url_prova: str = None):
@@ -502,6 +616,9 @@ def main():
     ap.add_argument("--headless", action="store_true", help="Senza finestra (solo dopo il primo login)")
     ap.add_argument("--debug", action="store_true", help="Mostra cosa trova senza scaricare a vuoto")
     ap.add_argument("--out", default=CARTELLA_DESTINAZIONE, help="Cartella di destinazione")
+    ap.add_argument("--solo-queste-lezioni", action="store_true",
+                     help="Scarica SOLO gli URL indicati, senza scoprire "
+                          "automaticamente le altre lezioni dello stesso corso")
     args = ap.parse_args()
 
     urls = leggi_urls(args.urls)
@@ -523,7 +640,14 @@ def main():
         )
         try:
             assicura_login(context, args.headless, url_prova=urls[0])
-            for url in urls:
+
+            if args.solo_queste_lezioni:
+                urls_da_elaborare = urls
+            else:
+                urls_da_elaborare = espandi_con_scoperta_corso(context, urls, args.debug)
+
+            print(f"\n📋 Lezioni totali da elaborare: {len(urls_da_elaborare)}")
+            for url in urls_da_elaborare:
                 totale += elabora_pagina(context, url, cartella_base, args.debug)
         finally:
             context.close()

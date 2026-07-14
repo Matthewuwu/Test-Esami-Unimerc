@@ -27,19 +27,24 @@ Da qui in poi **non servono altri comandi di installazione o aggiornamento**:
 ```bash
 cd ~/Test-Esami-Unimerc
 
-# una lezione (con --debug prima, per vedere cosa trova senza scaricare)
-./dispense.sh "https://lms.mercatorum.multiversity.click/videolezioni/0142509SECSP08I/52" --debug
-
-# quando i risultati sono giusti, togli --debug e scarica davvero
+# basta UN link a una lezione qualsiasi del corso: lo script scopre da solo
+# tutte le altre lezioni dello stesso corso e scarica le dispense di ognuna
 ./dispense.sh "https://lms.mercatorum.multiversity.click/videolezioni/0142509SECSP08I/52"
 
-# tante lezioni insieme: mettile (una per riga) in scraper/dispense_urls.txt e poi
+# con --debug vedi passo passo cosa trova (utile la prima volta su un corso nuovo)
+./dispense.sh "https://lms.mercatorum.multiversity.click/videolezioni/0142509SECSP08I/52" --debug
+
+# per scaricare SOLO quella lezione, senza scoprire il resto del corso
+./dispense.sh "https://lms.mercatorum.multiversity.click/videolezioni/0142509SECSP08I/52" --solo-queste-lezioni
+
+# più corsi in una volta: mettili (uno o più URL per riga) in scraper/dispense_urls.txt e poi
 ./dispense.sh
 ```
 
 - Alla **prima esecuzione** si apre un browser: fai il **login** al portale e premi INVIO nel terminale. Il login resta memorizzato.
-- I PDF finiscono in `/home/mattia/kDrive/Universita/Management per l'impresa` (cartella per corso). Cambi destinazione con `--out "/altro/percorso"`.
+- I PDF finiscono in `/home/mattia/kDrive/Universita/Management per l'impresa` (una sottocartella per lezione). Cambi destinazione con `--out "/altro/percorso"`.
 - I file già scaricati vengono **saltati**: puoi rilanciare quando vuoi.
+- La **scoperta automatica** delle lezioni si basa sui link presenti nel menù "Contenuti del Corso": se una sezione non si apre da sola, prova a rilanciare con `--debug` per vedere cosa succede.
 
 ---
 
