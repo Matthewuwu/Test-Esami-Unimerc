@@ -56,12 +56,35 @@ e le salva in `/home/mattia/kDrive/Universita/Management per l'impresa`.
 
 ### Installazione (una volta)
 
+Su Arch/Manjaro `pip` non può installare a livello di sistema
+(`externally-managed-environment`): serve un **ambiente virtuale**. Fai tutto
+con lo script pronto:
+
 ```bash
-pip install -r requirements.txt
+./setup.sh
+```
+
+Oppure a mano:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install playwright
 playwright install chromium
 ```
 
+> L'avviso `BEWARE: your OS is not officially supported ... fallback build for
+> ubuntu24.04` è normale su Arch e non è un errore: la build di Ubuntu funziona.
+
 ### Uso
+
+Con lo script `./avvia.sh` (attiva il venv da solo):
+
+```bash
+./avvia.sh "https://www.unimercatorum.it/.../lezione" --debug
+```
+
+Oppure attivando il venv a mano (`source .venv/bin/activate`) e poi:
 
 ```bash
 # 1ª volta: si apre una finestra, fai il LOGIN a Unimercatorum, poi premi INVIO
