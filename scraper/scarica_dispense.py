@@ -40,7 +40,7 @@ from pathlib import Path
 from urllib.parse import urljoin, urlparse, unquote
 
 try:
-    from playwright.sync_api import sync_playwright
+    from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 except ImportError:
     sys.exit("❌ Manca Playwright.  Installa con:\n"
              "   pip install playwright\n"
@@ -57,8 +57,27 @@ DOMINIO = "lms.mercatorum.multiversity.click"
 # Cartella dove viene salvata la sessione del browser (login persistente).
 PROFILO = str(Path.home() / ".config" / "scarica-dispense" / "profilo")
 
-# Parole che identificano un link/sezione "dispensa".
+# Parole che identificano un link/sezione "dispensa" (ricerca testuale di riserva).
 PAROLE_DISPENSA = ["dispens", "materiale", "slide", "pdf", "download", "scarica"]
+
+# ------------------------------------------------------------
+# Classi CSS reali del portale (Tailwind), fornite osservando la pagina.
+# NOTA: sono classi di STILE, non dicono se l'elemento è un link <a> o un
+# div/button cliccabile via JavaScript — lo script gestisce entrambi i casi.
+# ------------------------------------------------------------
+# Toggle/tab da aprire per rivelare le dispense (es. la voce "Dispense" del menù)
+TOGGLE_CLASSI = "align-left flex items-center h-full leading-normal font-medium"
+# Riga di ogni singola dispensa, una volta rivelata
+DISPENSA_CLASSI = "flex items-center justify-between pr-3 py-3 text-base border-t font-normal hover:bg-platform-hover-light"
+
+
+def selettore_da_classi(classi: str) -> str:
+    """Converte 'a b c:d' (attributo class) in un selettore CSS '.a.b.c\\:d'."""
+    return "".join("." + tok.replace(":", r"\:") for tok in classi.split())
+
+
+TOGGLE_SELECTOR = selettore_da_classi(TOGGLE_CLASSI)
+DISPENSA_SELECTOR = selettore_da_classi(DISPENSA_CLASSI)
 
 
 # ============================================================
@@ -143,22 +162,137 @@ def trova_url_pdf_nella_pagina(page):
     return None
 
 
-def espandi_sezioni_dispense(page):
-    """Clicca elementi che sembrano toggle/accordion di 'Dispense' per rivelarne i link."""
-    provati = 0
-    for parola in ["Dispens", "Dispense", "Materiale", "Materiali"]:
+def espandi_sezioni_dispense(page, debug=False):
+    """Clicca i toggle che rivelano le dispense. Ritorna quanti ne ha aperti."""
+    aperti = 0
+    toggles = page.query_selector_all(TOGGLE_SELECTOR)
+    if debug:
+        print(f"   🔧 toggle individuati via classe: {len(toggles)}")
+    for t in toggles:
+        try:
+            if t.is_visible():
+                t.click(timeout=1500)
+                page.wait_for_timeout(400)
+                aperti += 1
+        except Exception:
+            pass
+    if aperti:
+        page.wait_for_timeout(500)
+        return aperti
+
+    # Fallback: ricerca testuale, nel caso la classe sia cambiata o non trovata.
+    for parola in ["Dispens", "Materiale", "Materiali"]:
         for el in page.query_selector_all(f"text=/{parola}/i"):
             try:
                 if el.is_visible():
                     el.click(timeout=1500)
                     page.wait_for_timeout(400)
-                    provati += 1
+                    aperti += 1
             except Exception:
                 pass
-        if provati:
+        if aperti:
             break
-    if provati:
+    if aperti:
+        page.wait_for_timeout(500)
+    return aperti
+
+
+def gestisci_click_dispensa(context, page, elemento, cartella, testo, debug):
+    """Clicca una riga 'dispensa' senza href e scarica il PDF risultante,
+    sia che apra una NUOVA scheda sia che navighi la pagina corrente."""
+    url_prima = page.url
+    try:
+        with context.expect_page(timeout=3000) as info:
+            elemento.click(timeout=3000)
+        nuova = info.value
+        nuova.wait_for_load_state("domcontentloaded", timeout=15000)
+        nuova.wait_for_timeout(500)
+        url_pdf = trova_url_pdf_nella_pagina(nuova)
+        ok = salva_pdf(context, url_pdf, cartella, testo, debug) if url_pdf else False
+        if not url_pdf and debug:
+            print(f"   ↷  nuova scheda ma nessun PDF individuato: {nuova.url}")
+        nuova.close()
+        return ok
+    except PWTimeout:
+        # Nessuna nuova scheda: probabilmente ha navigato la pagina corrente.
+        try:
+            page.wait_for_load_state("domcontentloaded", timeout=8000)
+        except Exception:
+            pass
         page.wait_for_timeout(600)
+        ok = False
+        if page.url != url_prima:
+            url_pdf = trova_url_pdf_nella_pagina(page)
+            if url_pdf:
+                ok = salva_pdf(context, url_pdf, cartella, testo, debug)
+            elif debug:
+                print(f"   ↷  pagina navigata ma nessun PDF individuato: {page.url}")
+            try:
+                page.go_back(wait_until="domcontentloaded", timeout=15000)
+                page.wait_for_timeout(500)
+            except Exception:
+                pass
+        elif debug:
+            print("   ↷  il click non ha aperto nulla di rilevabile")
+        return ok
+    except Exception as e:
+        if debug:
+            print(f"   ⚠️  errore sul click: {e}")
+        return False
+
+
+def raccogli_ed_estrai_dispense(context, page, cartella, debug):
+    """Trova le righe 'dispensa' (classe dedicata) e scarica ciò che trovano,
+    sia link diretti (<a href>) sia righe cliccabili via JavaScript."""
+    scaricati = 0
+    indice = 0
+    tentativi_riapertura = 0
+    while True:
+        elementi = page.query_selector_all(DISPENSA_SELECTOR)
+        if debug and indice == 0:
+            print(f"   📚 righe dispensa individuate: {len(elementi)}")
+        if indice >= len(elementi):
+            if not elementi and tentativi_riapertura < 2:
+                tentativi_riapertura += 1
+                if debug:
+                    print("   🔁 nessuna riga visibile: riprovo ad espandere...")
+                espandi_sezioni_dispense(page, debug=False)
+                page.wait_for_timeout(500)
+                continue
+            break
+
+        el = elementi[indice]
+        testo = (el.inner_text() or "").strip() or f"dispensa-{indice + 1}"
+        href = el.get_attribute("href")
+        if not href:
+            figlio = el.query_selector("a[href]")
+            href = figlio.get_attribute("href") if figlio else None
+
+        if href:
+            url = urljoin(page.url, href)
+            ok = salva_pdf(context, url, cartella, testo, debug)
+            if not ok:
+                try:
+                    tmp = context.new_page()
+                    tmp.goto(url, wait_until="domcontentloaded", timeout=30000)
+                    tmp.wait_for_timeout(600)
+                    url_pdf = trova_url_pdf_nella_pagina(tmp)
+                    tmp.close()
+                    if url_pdf:
+                        ok = salva_pdf(context, url_pdf, cartella, testo, debug)
+                except Exception as e:
+                    if debug:
+                        print(f"   ⚠️  {url}: {e}")
+            if ok:
+                scaricati += 1
+        else:
+            if gestisci_click_dispensa(context, page, el, cartella, testo, debug):
+                scaricati += 1
+
+        indice += 1
+        tentativi_riapertura = 0
+
+    return scaricati
 
 
 def raccogli_link_candidati(page):
@@ -191,14 +325,24 @@ def elabora_pagina(context, url_pagina: str, cartella_base: Path, debug: bool) -
         print(f"\n🌐 Apro: {url_pagina}")
         page.goto(url_pagina, wait_until="domcontentloaded", timeout=45000)
         page.wait_for_timeout(1500)
-        espandi_sezioni_dispense(page)
 
         # nome cartella del corso = titolo pagina
         titolo = pulisci_nome(page.title() or "corso")
         cartella = cartella_base / titolo if titolo else cartella_base
 
+        aperti = espandi_sezioni_dispense(page, debug)
+        if debug:
+            print(f"   🔧 sezioni aperte: {aperti}")
+
+        # Via principale: righe 'dispensa' con la classe dedicata del portale.
+        n = raccogli_ed_estrai_dispense(context, page, cartella, debug)
+        print(f"   📄 dispense scaricate (righe dedicate): {n}")
+        scaricati += n
+
+        # Rete di sicurezza: scansione generica di link, nel caso qualche PDF
+        # non sia dentro le righe con la classe dedicata.
         candidati = raccogli_link_candidati(page)
-        print(f"   🔎 trovati {len(candidati)} link candidati")
+        print(f"   🔎 trovati {len(candidati)} link candidati aggiuntivi")
         if debug:
             for u, t in candidati:
                 print(f"      • {t[:60]!r} -> {u}")
