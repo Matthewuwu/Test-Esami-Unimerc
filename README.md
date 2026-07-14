@@ -44,7 +44,7 @@ cd ~/Test-Esami-Unimerc
 - Alla **prima esecuzione** si apre un browser: fai il **login** al portale e premi INVIO nel terminale. Il login resta memorizzato.
 - I PDF finiscono in `/home/mattia/kDrive/Universita/Management per l'impresa` (una sottocartella per lezione). Cambi destinazione con `--out "/altro/percorso"`.
 - I file già scaricati vengono **saltati**: puoi rilanciare quando vuoi.
-- La **scoperta automatica** delle lezioni si basa sui link presenti nel menù "Contenuti del Corso": se una sezione non si apre da sola, prova a rilanciare con `--debug` per vedere cosa succede.
+- La **scoperta automatica** (verificata e funzionante) apre il pannello "Contenuti del Corso" e clicca ogni riga di lezione per scoprirne l'URL: basta un solo link di partenza per scaricare l'intero corso.
 
 ---
 
