@@ -39,6 +39,7 @@ import argparse
 import os
 import re
 import sys
+import time
 from pathlib import Path
 from urllib.parse import urljoin, urlparse, unquote
 
@@ -272,6 +273,10 @@ def espandi_sezioni_dispense(page, debug=False):
     aperti = 0
     esaminati = 0
     giri_senza_novita = 0
+    ultimo_progresso = time.time()
+    LIMITE_SENZA_PROGRESSI = 25  # secondi: oltre, anche se "scrollato" risulta
+    # sempre True (es. un widget con scroll che rimbalza all'infinito, non
+    # legato alle dispense), ci fermiamo comunque.
     for _ in range(400):  # limite di sicurezza anti-loop-infinito
         trovato_qualcosa = False
         for frame in tutti_i_frame(page):
@@ -294,11 +299,16 @@ def espandi_sezioni_dispense(page, debug=False):
                         t.click(timeout=1500)
                         page.wait_for_timeout(350)
                         aperti += 1
+                        ultimo_progresso = time.time()
                 except Exception:
                     pass
         if trovato_qualcosa:
             giri_senza_novita = 0
             continue
+        if time.time() - ultimo_progresso > LIMITE_SENZA_PROGRESSI:
+            if debug:
+                print(f"   ⏱️  nessun nuovo toggle da {LIMITE_SENZA_PROGRESSI}s: mi fermo")
+            break
         # Nessun toggle nuovo in questo giro: prova a scorrere per farne
         # comparire altri (liste virtualizzate).
         try:
@@ -411,6 +421,8 @@ def raccogli_ed_estrai_dispense(context, page, cartella, debug):
     scaricati = 0
     prima_volta = True
     giri_senza_novita = 0
+    ultimo_progresso = time.time()
+    LIMITE_SENZA_PROGRESSI = 30  # secondi senza righe/toggle/scroll nuovi: basta
     for _ in range(2000):  # limite di sicurezza anti-loop-infinito
         righe = _tutte_le_righe_dispensa(page)
         if prima_volta:
@@ -462,6 +474,7 @@ def raccogli_ed_estrai_dispense(context, page, cartella, debug):
             if ok:
                 scaricati += 1
             giri_senza_novita = 0
+            ultimo_progresso = time.time()
             continue
 
         # Nessuna riga dispensa nuova: forse aprendo altri toggle (es. un
@@ -470,7 +483,13 @@ def raccogli_ed_estrai_dispense(context, page, cartella, debug):
         if aperti:
             page.wait_for_timeout(400)
             giri_senza_novita = 0
+            ultimo_progresso = time.time()
             continue
+
+        if time.time() - ultimo_progresso > LIMITE_SENZA_PROGRESSI:
+            if debug:
+                print(f"   ⏱️  nessuna novità da {LIMITE_SENZA_PROGRESSI}s: mi fermo")
+            break
 
         # Ancora nulla: prova a scorrere eventuali contenitori virtualizzati.
         try:
@@ -726,6 +745,8 @@ def scopri_lezioni_corso(context, url_iniziale, debug):
 
         testi_elaborati = set()
         giri_senza_novita = 0
+        ultimo_progresso = time.time()
+        LIMITE_SENZA_PROGRESSI = 30  # secondi
         MAX_GIRI = 300  # sicurezza anti-loop-infinito (corsi con centinaia di lezioni)
 
         for _ in range(MAX_GIRI):
@@ -741,6 +762,10 @@ def scopri_lezioni_corso(context, url_iniziale, debug):
                     break
 
             if riga_da_cliccare is None:
+                if time.time() - ultimo_progresso > LIMITE_SENZA_PROGRESSI:
+                    if debug:
+                        print(f"   ⏱️  nessuna nuova riga da {LIMITE_SENZA_PROGRESSI}s: mi fermo")
+                    break
                 # Nessuna riga nuova visibile: prova a scorrere la lista.
                 if _scorri_pannello_lezioni(page):
                     page.wait_for_timeout(400)
@@ -751,6 +776,8 @@ def scopri_lezioni_corso(context, url_iniziale, debug):
                     break
                 page.wait_for_timeout(300)
                 continue
+
+            ultimo_progresso = time.time()
 
             giri_senza_novita = 0
             el, testo = riga_da_cliccare
