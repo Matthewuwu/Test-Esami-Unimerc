@@ -1,4 +1,4 @@
 [submodule ".claude/skills-shared"]
 	path = .claude/skills-shared
 	url = https://github.com/Matthewuwu/ClaudeSkills-di-Tia.git
-	branch = claude/skill-infrastructure-setup-plxxep
+	branch = main
